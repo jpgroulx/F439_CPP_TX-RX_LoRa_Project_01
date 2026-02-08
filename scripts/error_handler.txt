@@ -1,0 +1,23 @@
+
+
+/**
+ * @brief  This function is executed in case of error occurrence.
+ * @param  file: The file name as string.
+ * @param  line: The line in file as a number.
+ * @retval None
+ */
+void _Error_Handler(const char *file, int line)
+{
+	/* USER CODE BEGIN Error_Handler_Debug */
+	__disable_irq();
+#ifdef REDIRECT_PRINTF
+	char buf[80];
+	sprintf(buf, "Trapped in _Error_Handler().  Called from: %s, line: %d\r\n", file, line);
+	printf(buf);
+#endif
+	/* User can add his own implementation to report the HAL error return state */
+	while(1)
+	{
+	}
+}
+

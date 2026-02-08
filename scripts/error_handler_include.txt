@@ -1,0 +1,4 @@
+
+void _Error_Handler(const char *, int);
+	
+#define Error_Handler() _Error_Handler((const char *)__FILE__, __LINE__)

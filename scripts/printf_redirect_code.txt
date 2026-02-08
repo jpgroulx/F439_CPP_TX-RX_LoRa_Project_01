@@ -1,0 +1,18 @@
+
+#ifdef REDIRECT_PRINTF
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#endif
+
+#ifdef REDIRECT_PRINTF
+/**
+  * @brief  Retargets the C library printf function to the USART.
+  * @param  None
+  * @retval None
+  */
+PUTCHAR_PROTOTYPE
+{
+  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
+
+  return ch;
+}
+#endif
