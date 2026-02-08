@@ -156,19 +156,20 @@ int main(void)
 
   RadioApp_Init(&sx);
 
+#ifdef RF_DEBUG
   uint8_t status = SX1262_GetStatusRaw(&sx);
 
   printf("SX1262 status=0x%02X\r\n", status);
-
+#endif
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+#ifdef RF_DEBUG
 	  static uint32_t last_status_ms;
 
-#ifdef SX_DEBUG_GET_STATUS_POLL
 	  if ((HAL_GetTick() - last_status_ms) >= 1000U) {
 	      uint8_t tx[2] = { 0xC0, 0x00 };
 	      uint8_t rx[2] = { 0, 0 };

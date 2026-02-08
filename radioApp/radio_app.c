@@ -13,25 +13,6 @@
 static SX1262_Handle *g_sx;
 static volatile uint8_t g_irq;
 
-#if defined(SX_ROLE_RX)
-static void Radio_IrqService(void) {
-    SX1262_IrqResult r;
-
-    if (!SX1262_ProcessIrq(g_sx, &r))
-        return;
-
-    if (r.rx_done && !r.crc_error) {
-        uint8_t n = r.payload[0];
-        char s[256];
-
-        memcpy(s, &r.payload[1], n);
-        s[n] = 0;
-        printf("RX: %s  RSSI=%u  SNR=%d\r\n", s, r.rssi_pkt, r.snr_pkt);
-    }
-}
-#endif
-
-
 void RadioApp_Init(SX1262_Handle *sx) {
     g_sx = sx;
     g_irq = 0;
@@ -77,6 +58,7 @@ void RadioApp_Loop(void) {
             return;
         }
 
+#ifdef RF_DEBUG
         printf("IRQ: rx_done=%u tx_done=%u crc_error=%u timeout=%u payload_len=%u first=%02X\r\n",
                (unsigned)r.rx_done,
                (unsigned)r.tx_done,
@@ -84,6 +66,7 @@ void RadioApp_Loop(void) {
                (unsigned)r.timeout,
                (unsigned)r.payload_len,
                (unsigned)r.payload[0]);
+#endif
 
         if (r.rx_done && !r.crc_error) {
             uint8_t n = r.payload[0];
@@ -96,7 +79,9 @@ void RadioApp_Loop(void) {
             memcpy(s, &r.payload[1], n);
             s[n] = 0;
 
+#ifndef RF_DEBUG
             printf("RX: %s RSSI=%u SNR=%d\r\n", s, r.rssi_pkt, r.snr_pkt);
+#endif
         }
     }
 
@@ -104,8 +89,7 @@ void RadioApp_Loop(void) {
     static uint32_t last_send_ms;
     static uint32_t counter;
     static uint8_t tx_in_flight;
-    uint32_t t1;
-    uint32_t t2;
+
 
 //    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
 
@@ -113,23 +97,35 @@ void RadioApp_Loop(void) {
 
     if (!tx_in_flight && (now - last_send_ms) >= 1000U) {
         char msg[64];
+#ifdef RF_DEBUG
+        uint32_t t1;
+        uint32_t t2;
         uint32_t t0 = HAL_GetTick();
+#endif
 
         last_send_ms = now;
         sprintf(msg, "Hello %lu", (unsigned long)counter++);
 
+#ifdef RF_DEBUG
         printf("[%lu] TX start request\r\n", (unsigned long)t0);
 
         t1 = HAL_GetTick();
-
+#endif
         if (SX1262_SendString(g_sx, msg)) {
+#ifdef RF_DEBUG
         	t2 = HAL_GetTick();
+
             printf("[%lu] SendString dt=%lums\r\n",
                    (unsigned long)t2,
                    (unsigned long)(t2 - t1));
+#endif
+            printf("TX: Send string: [%s]\r\n", msg);
+
             tx_in_flight = 1;
         } else {
+#ifdef RF_DEBUG
             printf("[%lu] TX start failed\r\n", (unsigned long)HAL_GetTick());
+#endif
         }
     }
 
@@ -138,10 +134,14 @@ void RadioApp_Loop(void) {
 
     	if (tr == SX1262_TXPOLL_DONE) {
     		tx_in_flight = 0;
+#ifdef RF_DEBUG
     		printf("[%lu] TX done\r\n", (unsigned long)HAL_GetTick());
+#endif
     	} else if (tr == SX1262_TXPOLL_TIMEOUT) {
     		tx_in_flight = 0;
+#ifdef RF_DEBUG
     		printf("TX timeout\r\n");
+#endif
     	}
     }
 
