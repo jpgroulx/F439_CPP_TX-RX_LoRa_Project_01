@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "sx1262.h"
+#include "stm32_uidhash.h"
 #include "radio_app.h"
 #include <sys/unistd.h>
 #include <stdio.h>
@@ -36,13 +37,6 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#if !defined(SX_ROLE_TX) && !defined(SX_ROLE_RX)
-#define SX_ROLE_RX
-#endif
-
-#if defined(SX_ROLE_TX) && defined(SX_ROLE_RX)
-#error "Define only one of SX_ROLE_TX or SX_ROLE_RX"
-#endif
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -59,6 +53,7 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 SX1262_Handle sx;
+SX1262_ROLE sx1262Role;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -142,6 +137,54 @@ int main(void)
 
   printf("\x1b[2J\x1b[H");	// Clear the dumb terminal screen
 
+  uint32_t uid[3] = {0x00};
+  char hashedUUID[80];
+  char buff[12];
+
+  uid[0] = HAL_GetUIDw0();
+  uid[1] = HAL_GetUIDw1();
+  uid[2] = HAL_GetUIDw2();
+
+
+  uint8_t lot1[4];
+  uint8_t lot2[4];
+  uint8_t *ptr;
+
+  ptr = (uint8_t *)&uid[1];
+  for (uint8_t i = 0; i < 4; i++) {
+	  lot1[i] = ptr[i];
+  }
+
+  ptr = (uint8_t *)&uid[2];
+  for (uint8_t i = 0; i < 4; i++) {
+	  lot2[i] = ptr[i];
+  }
+
+  char UUID[80] = {'\0'};
+  char serialNo[80];
+
+  sprintf(UUID, "0x%8.8lx:%c%c%c%c:%c%c%c%c", uid[0], lot1[0], lot1[1], lot1[2], lot1[3],
+		  lot2[0], lot2[1], lot2[2], lot2[3]);
+
+  printf("UUID: %s\r\n", UUID);
+
+  sprintf(serialNo, "0x%8.8lx", uid[0]);
+  printf("SerialNo: %s\r\n", serialNo);
+  memcpy(&buff[8], &uid[0], 4);
+  memcpy(&buff[4], &uid[1], 4);
+  memcpy(&buff[0], &uid[2], 4);
+
+  uint32_t uuid = Hash32Len5to12((const char *) &buff, 12);
+
+  sprintf(hashedUUID, "0x%8.8lx", uuid);
+  printf("hashedUUID: %s\r\n", hashedUUID);
+
+  if (strcmp(hashedUUID, "0x5b84c9f6") == 0) {
+	  sx1262Role = SX_ROLE_RX;
+  } else {
+	  sx1262Role = SX_ROLE_TX;
+  }
+
   sx.hspi = &hspi1;
   sx.NSS_Port = GPIOC;  sx.NSS_Pin = GPIO_PIN_9;
   sx.DIO1_Port = GPIOC; sx.DIO1_Pin = GPIO_PIN_10;
@@ -156,19 +199,20 @@ int main(void)
 
   RadioApp_Init(&sx);
 
+#ifdef RF_DEBUG
   uint8_t status = SX1262_GetStatusRaw(&sx);
 
   printf("SX1262 status=0x%02X\r\n", status);
-
+#endif
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+#ifdef RF_DEBUG
 	  static uint32_t last_status_ms;
 
-#ifdef SX_DEBUG_GET_STATUS_POLL
 	  if ((HAL_GetTick() - last_status_ms) >= 1000U) {
 	      uint8_t tx[2] = { 0xC0, 0x00 };
 	      uint8_t rx[2] = { 0, 0 };
@@ -378,14 +422,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOF, SX1262_TX_ENABLE_Pin|SX1262_RX_ENABLE_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(USB_PowerSwitchOn_GPIO_Port, USB_PowerSwitchOn_Pin, GPIO_PIN_RESET);
@@ -402,13 +442,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PB0 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : USB_PowerSwitchOn_Pin */
   GPIO_InitStruct.Pin = USB_PowerSwitchOn_Pin;

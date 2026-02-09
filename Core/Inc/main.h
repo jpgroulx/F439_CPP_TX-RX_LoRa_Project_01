@@ -78,7 +78,10 @@ extern "C" {
 
 /* USER CODE BEGIN Private defines */
 
-#define SX_ROLE_RX 1
+typedef enum {
+	SX_ROLE_RX = 0,
+	SX_ROLE_TX
+} SX1262_ROLE;
 
 void _Error_Handler(const char *, int);
 	
