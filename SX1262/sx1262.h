@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "main.h"
 #include "stm32f4xx_hal.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -55,7 +56,7 @@ typedef struct {
     bool crc_error;
     bool timeout;
 
-    uint8_t rssi_pkt;
+    int8_t rssi_pkt;
     int8_t snr_pkt;
 
     uint8_t payload[256];
@@ -67,8 +68,6 @@ typedef enum {
     SX1262_TXPOLL_DONE,
     SX1262_TXPOLL_TIMEOUT
 } SX1262_TxPollResult;
-
-SX1262_TxPollResult SX1262_TxPoll(SX1262_Handle *sx);
 
 
 void SX1262_Init(SX1262_Handle *sx);

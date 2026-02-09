@@ -48,17 +48,12 @@
 #ifdef RF_DEBUG
 static uint8_t g_last_mod[4];
 static uint8_t g_last_pkt[6];
-static uint8_t g_last_mod_valid;
-static uint8_t g_last_pkt_valid;
 #endif
 
+extern SX1262_ROLE sx1262Role;
 
 /* ===================== GPIO helpers ===================== */
 
-//static void wait_busy(SX1262_Handle *sx) {
-//    while (HAL_GPIO_ReadPin(sx->BUSY_Port, sx->BUSY_Pin) == GPIO_PIN_SET) {
-//    }
-//}
 static bool wait_busy(SX1262_Handle *sx, uint32_t timeout_ms) {
     uint32_t t0 = HAL_GetTick();
 
@@ -72,7 +67,10 @@ static bool wait_busy(SX1262_Handle *sx, uint32_t timeout_ms) {
 }
 
 static void cs_low(SX1262_Handle *sx) {
-	wait_busy(sx, 10);
+    if (!wait_busy(sx, 10)) {
+        Error_Handler();
+    }
+
     HAL_GPIO_WritePin(sx->NSS_Port, sx->NSS_Pin, GPIO_PIN_RESET);
 }
 
@@ -136,11 +134,9 @@ static bool sx_cmd_write(SX1262_Handle *sx, uint8_t cmd, const uint8_t *args, ui
 #ifdef RF_DEBUG
 	if (cmd == SX126X_CMD_SET_MODULATION_PARAMS && args && n == 4) {
 	    memcpy(g_last_mod, args, 4);
-	    g_last_mod_valid = 1;
 	}
 	if (cmd == SX126X_CMD_SET_PACKET_PARAMS && args && n == 6) {
 	    memcpy(g_last_pkt, args, 6);
-	    g_last_pkt_valid = 1;
 	}
 #endif
 
@@ -164,16 +160,6 @@ static bool sx_cmd_write(SX1262_Handle *sx, uint8_t cmd, const uint8_t *args, ui
         return true;
     }
 
-
-    if (!wait_busy(sx, 10)) {
-#ifdef RF_DEBUG
-        printf("BUSY timeout AFTER cmd 0x%02X (BUSY=%d DIO1=%d)\r\n",
-               cmd,
-               (int)HAL_GPIO_ReadPin(sx->BUSY_Port, sx->BUSY_Pin),
-               (int)HAL_GPIO_ReadPin(sx->DIO1_Port, sx->DIO1_Pin));
-#endif
-        return false;
-    }
     return true;
 }
 
@@ -193,7 +179,6 @@ void SX1262_Init(SX1262_Handle *sx) {
     HAL_GPIO_WritePin(sx->RESET_Port, sx->RESET_Pin, GPIO_PIN_SET);
     HAL_Delay(10);
 
-//    wait_busy(sx);
     if (!wait_busy(sx, 10)) {
         Error_Handler();
     }
@@ -290,6 +275,7 @@ bool SX1262_ConfigureLoRa(SX1262_Handle *sx, const SX1262_LoRaConfig *cfg) {
         sx_cmd_write(sx, SX126X_CMD_SET_PA_CONFIG, pa, 4);
     }
 
+#ifdef DELETE_NOT_NEEDED_CODE
     /* Set TX power and ramp time */
     {
         uint8_t p[2];
@@ -301,17 +287,20 @@ bool SX1262_ConfigureLoRa(SX1262_Handle *sx, const SX1262_LoRaConfig *cfg) {
             return false;
         }
     }
+#endif
 
     buf[0] = cfg->tx_dbm;
     buf[1] = 0x09;
     sx_cmd_write(sx, SX126X_CMD_SET_TX_PARAMS, buf, 2);
 
 
-#if defined(SX_ROLE_RX)
-    uint16_t mask = SX126X_IRQ_RX_DONE | SX126X_IRQ_CRC_ERROR | SX126X_IRQ_RX_TX_TIMEOUT;
-#else
-    uint16_t mask = SX126X_IRQ_TX_DONE | SX126X_IRQ_RX_TX_TIMEOUT;
-#endif
+    uint16_t mask;
+
+    if (sx1262Role == SX_ROLE_RX) {
+    	mask = SX126X_IRQ_RX_DONE | SX126X_IRQ_CRC_ERROR | SX126X_IRQ_RX_TX_TIMEOUT;
+    } else {
+    	mask = SX126X_IRQ_TX_DONE | SX126X_IRQ_RX_TX_TIMEOUT;
+    }
 
 
     buf[0] = mask >> 8; buf[1] = mask;
@@ -373,7 +362,6 @@ bool SX1262_SendString(SX1262_Handle *sx, const char *s) {
     {
         uint8_t hdr[2] = { SX126X_CMD_WRITE_BUFFER, 0x00 };
 
-//        wait_busy(sx);
         if (!wait_busy(sx, 10)) {
             Error_Handler();
         }
@@ -402,9 +390,6 @@ bool SX1262_SendString(SX1262_Handle *sx, const char *s) {
            g_last_pkt[0], g_last_pkt[1], g_last_pkt[2], g_last_pkt[3], g_last_pkt[4], g_last_pkt[5]);
 #endif
 
-    uint8_t pt = 0x01; /* LoRa */
-    sx_cmd_write(sx, SX126X_CMD_SET_PACKETTYPE, &pt, 1);
-
     /* Start TX with ~2s radio timeout (doesn't block CPU) */
     t[0] = 0x01;
     t[1] = 0xF4;
@@ -430,72 +415,6 @@ bool SX1262_SendString(SX1262_Handle *sx, const char *s) {
     return ok;
 }
 
-
-#ifdef COMMENT
-bool SX1262_SendString(SX1262_Handle *sx, const char *s) {
-    uint8_t msg[256];
-    size_t n;
-    uint8_t total;
-    uint8_t pktp[6];
-    uint8_t clr[2] = { 0xFF, 0xFF };
-    uint8_t t[3] = { 0x01, 0xF4, 0x00 }; /* ~2s timeout */
-
-    n = strlen(s);
-    if (n > 254U) {
-        n = 254U;
-    }
-
-    msg[0] = (uint8_t)n;
-    memcpy(&msg[1], s, n);
-    total = (uint8_t)(n + 1U);
-
-    /* Clear any stale IRQs before starting TX */
-    sx_cmd_write(sx, SX126X_CMD_CLEAR_IRQ_STATUS, clr, 2);
-
-    /*
-     * Critical: SetPacketParams with the *actual payload length*.
-     * Keep these consistent with your LoRa config: preamble=8, explicit header, CRC on, IQ normal.
-     */
-    pktp[0] = 0x00;
-    pktp[1] = 0x08;
-    pktp[2] = 0x00;
-    pktp[3] = total;
-    pktp[4] = 0x01;
-    pktp[5] = 0x00;
-    if (!sx_cmd_write(sx, SX126X_CMD_SET_PACKET_PARAMS, pktp, 6)) {
-        return false;
-    }
-
-    /* Write payload then start TX */
-    rf_to_tx(sx);
-
-    wait_busy(sx);
-    cs_low(sx);
-
-    {
-        uint8_t hdr[2] = { SX126X_CMD_WRITE_BUFFER, 0x00 };
-
-        if (!spi_tx(sx, hdr, 2)) {
-            cs_high(sx);
-            return false;
-        }
-        if (!spi_tx(sx, msg, total)) {
-            cs_high(sx);
-            return false;
-        }
-    }
-
-    cs_high(sx);
-    wait_busy(sx);
-
-    if (!sx_cmd_write(sx, SX126X_CMD_SET_TX, t, 3)) {
-        return false;
-    }
-
-    return true;
-}
-#endif
-
 bool SX1262_ProcessIrq(SX1262_Handle *sx, SX1262_IrqResult *out) {
     uint8_t hi, lo, dummy = 0;
     memset(out, 0, sizeof(*out));
@@ -520,6 +439,11 @@ bool SX1262_ProcessIrq(SX1262_Handle *sx, SX1262_IrqResult *out) {
     out->tx_done = irq & SX126X_IRQ_TX_DONE;
     out->crc_error = irq & SX126X_IRQ_CRC_ERROR;
     out->timeout = irq & SX126X_IRQ_RX_TX_TIMEOUT;
+
+    if (out->crc_error || out->timeout) {
+        out->payload_len = 0;
+        out->payload[0] = 0;
+    }
 
    	if (out->rx_done && !out->crc_error) {
         uint8_t pl, ptr;
@@ -551,8 +475,8 @@ bool SX1262_ProcessIrq(SX1262_Handle *sx, SX1262_IrqResult *out) {
             spi_xfer(sx, 0, &p2);
             cs_high(sx);
 
-            out->rssi_pkt = p0;
-            out->snr_pkt = (int8_t)p1;
+            out->rssi_pkt = -(int8_t)(p0 / 2);
+            out->snr_pkt = (int8_t)p1 / 4;
         }
 
     }
@@ -569,7 +493,6 @@ uint8_t SX1262_GetStatusRaw(SX1262_Handle *sx) {
     uint8_t status = 0;
     uint8_t dummy = 0x00;
 
-//    wait_busy(sx);
     if (!wait_busy(sx, 100)) {
     	Error_Handler();
     }
@@ -620,40 +543,6 @@ uint16_t SX1262_GetIrqStatusRaw(SX1262_Handle *sx) {
 	return irq;
 }
 
-SX1262_TxPollResult SX1262_TxPoll(SX1262_Handle *sx) {
-	uint16_t irq;
-
-#ifdef RF_DEBUG
-	static int once;
-
-	if (!once) {
-		once = 1;
-		printf("TxPoll signature: NEW_TXPOLL_ACTIVE\r\n");
-	}
-#endif
-
-	irq = SX1262_GetIrqStatusRaw(sx);
-
-	/* If the radio says nothing happened, we say nothing happened. */
-	if (irq == 0) {
-		return SX1262_TXPOLL_NONE;
-	}
-
-	if (irq & 0x0001) { /* SX126X_IRQ_TX_DONE */
-		SX1262_ClearIrq(sx, 0x0001);
-		return SX1262_TXPOLL_DONE;
-	}
-
-	if (irq & 0x0200) { /* SX126X_IRQ_RX_TX_TIMEOUT */
-		SX1262_ClearIrq(sx, 0x0200);
-		return SX1262_TXPOLL_TIMEOUT;
-	}
-
-	/* Clear any other bits we latched */
-	SX1262_ClearIrq(sx, irq);
-	return SX1262_TXPOLL_NONE;
-}
-
 void SX1262_ClearIrq(SX1262_Handle *sx, uint16_t mask) {
     uint8_t b[2];
 
@@ -661,7 +550,10 @@ void SX1262_ClearIrq(SX1262_Handle *sx, uint16_t mask) {
     b[1] = (uint8_t)(mask);
     sx_cmd_write(sx, SX126X_CMD_CLEAR_IRQ_STATUS, b, 2);
 
-    wait_busy(sx, 10);
+	if (!wait_busy(sx, 10)) {
+		Error_Handler();
+	}
+
 }
 
 bool SX1262_SetStandbyRc(SX1262_Handle *sx) {
