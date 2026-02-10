@@ -475,7 +475,7 @@ bool SX1262_ProcessIrq(SX1262_Handle *sx, SX1262_IrqResult *out) {
             spi_xfer(sx, 0, &p2);
             cs_high(sx);
 
-            out->rssi_pkt = -(int8_t)(p0 / 2);
+            out->rssi_pkt = (int8_t)(-((int16_t)p2) / 2); /* LoRa SignalRssiPkt: -raw/2 dBm */
             out->snr_pkt = (int8_t)p1 / 4;
         }
 
