@@ -22,7 +22,6 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "sx1262.h"
-#include "stm32_uidhash.h"
 #include "radio_app.h"
 #include <sys/unistd.h>
 #include <stdio.h>
@@ -137,53 +136,34 @@ int main(void)
 
   printf("\x1b[2J\x1b[H");	// Clear the dumb terminal screen
 
+  /* TODO: Fill these in from your UART prints (one-time) */
+  const uint32_t RX_UID0 = 0x00280024U;
+  const uint32_t RX_UID1 = 0x3133510aU;
+  const uint32_t RX_UID2 = 0x36393739U;
+
+  const uint32_t TX_UID0 = 0x002c003cU;
+  const uint32_t TX_UID1 = 0x31335110U;
+  const uint32_t TX_UID2 = 0x39323638U;
+
   uint32_t uid[3] = {0x00};
-  char hashedUUID[80];
-  char buff[12];
 
   uid[0] = HAL_GetUIDw0();
   uid[1] = HAL_GetUIDw1();
   uid[2] = HAL_GetUIDw2();
 
+  printf("UID words: %08lx %08lx %08lx\r\n", uid[0], uid[1], uid[2]);
 
-  uint8_t lot1[4];
-  uint8_t lot2[4];
-  uint8_t *ptr;
-
-  ptr = (uint8_t *)&uid[1];
-  for (uint8_t i = 0; i < 4; i++) {
-	  lot1[i] = ptr[i];
-  }
-
-  ptr = (uint8_t *)&uid[2];
-  for (uint8_t i = 0; i < 4; i++) {
-	  lot2[i] = ptr[i];
-  }
-
-  char UUID[80] = {'\0'};
-  char serialNo[80];
-
-  sprintf(UUID, "0x%8.8lx:%c%c%c%c:%c%c%c%c", uid[0], lot1[0], lot1[1], lot1[2], lot1[3],
-		  lot2[0], lot2[1], lot2[2], lot2[3]);
-
-  printf("UUID: %s\r\n", UUID);
-
-  sprintf(serialNo, "0x%8.8lx", uid[0]);
-  printf("SerialNo: %s\r\n", serialNo);
-  memcpy(&buff[8], &uid[0], 4);
-  memcpy(&buff[4], &uid[1], 4);
-  memcpy(&buff[0], &uid[2], 4);
-
-  uint32_t uuid = Hash32Len5to12((const char *) &buff, 12);
-
-  sprintf(hashedUUID, "0x%8.8lx", uuid);
-  printf("hashedUUID: %s\r\n", hashedUUID);
-
-  if (strcmp(hashedUUID, "0x5b84c9f6") == 0) {
-	  sx1262Role = SX_ROLE_RX;
+  if (uid[0] == RX_UID0 && uid[1] == RX_UID1 && uid[2] == RX_UID2) {
+  	sx1262Role = SX_ROLE_RX;
+  	printf("ROLE: RX\r\n");
+  } else if (uid[0] == TX_UID0 && uid[1] == TX_UID1 && uid[2] == TX_UID2) {
+  	sx1262Role = SX_ROLE_TX;
+  	printf("ROLE: TX\r\n");
   } else {
-	  sx1262Role = SX_ROLE_TX;
+  	printf("ROLE: UNKNOWN UID - refusing to start radio\r\n");
+  	Error_Handler();
   }
+
 
   sx.hspi = &hspi1;
   sx.NSS_Port = GPIOC;  sx.NSS_Pin = GPIO_PIN_9;
