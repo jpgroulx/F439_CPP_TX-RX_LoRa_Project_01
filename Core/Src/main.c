@@ -44,6 +44,10 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+CRYP_HandleTypeDef hcryp;
+__ALIGN_BEGIN static const uint32_t pKeyCRYP[6] __ALIGN_END = {
+                            0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000};
+
 SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim3;
@@ -61,6 +65,7 @@ static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_CRYP_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -132,6 +137,7 @@ int main(void)
   MX_SPI1_Init();
   MX_USART1_UART_Init();
   MX_TIM3_Init();
+  MX_CRYP_Init();
   /* USER CODE BEGIN 2 */
 
   printf("\x1b[2J\x1b[H");	// Clear the dumb terminal screen
@@ -267,6 +273,36 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief CRYP Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CRYP_Init(void)
+{
+
+  /* USER CODE BEGIN CRYP_Init 0 */
+
+  /* USER CODE END CRYP_Init 0 */
+
+  /* USER CODE BEGIN CRYP_Init 1 */
+
+  /* USER CODE END CRYP_Init 1 */
+  hcryp.Instance = CRYP;
+  hcryp.Init.DataType = CRYP_DATATYPE_32B;
+  hcryp.Init.pKey = (uint32_t *)pKeyCRYP;
+  hcryp.Init.Algorithm = CRYP_TDES_ECB;
+  hcryp.Init.DataWidthUnit = CRYP_DATAWIDTHUNIT_WORD;
+  if (HAL_CRYP_Init(&hcryp) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CRYP_Init 2 */
+
+  /* USER CODE END CRYP_Init 2 */
+
 }
 
 /**
