@@ -14,8 +14,6 @@
 #include "main.h"
 #include "sx1262.h"
 
-#define RADIOAPP_USE_BINARY_PACKET 1
-
 #pragma pack(push, 1)
 typedef struct {
     uint8_t node_id;

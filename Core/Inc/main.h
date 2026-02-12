@@ -56,6 +56,10 @@ extern "C" {
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+
+
+/* USER CODE BEGIN Private defines */
+
 #define SX1262_TX_ENABLE_Pin GPIO_PIN_6
 #define SX1262_TX_ENABLE_GPIO_Port GPIOF
 #define SX1262_RX_ENABLE_Pin GPIO_PIN_7
@@ -76,7 +80,7 @@ extern "C" {
 #define SX1262_BUSY_Pin GPIO_PIN_12
 #define SX1262_BUSY_GPIO_Port GPIOC
 
-/* USER CODE BEGIN Private defines */
+#define RADIOAPP_USE_BINARY_PACKET0
 
 typedef enum {
 	SX_ROLE_RX = 0,

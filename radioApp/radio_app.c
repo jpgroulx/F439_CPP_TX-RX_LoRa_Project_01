@@ -112,11 +112,21 @@ void RadioApp_Loop(void) {
 #ifdef RF_DEBUG
 				t2 = HAL_GetTick();
 
-				printf("[%lu] SendString dt=%lums\r\n",
+#ifdef RADIOAPP_USE_BINARY_PACKET
+				printf("[%lu] SendString with SendBuffer dt=%lums\r\n",
+					   (unsigned long)t2,
+					   (unsigned long)(t2 - t1));
+#else
+				printf("[%lu] SendString with Plain Text dt=%lums\r\n",
 					   (unsigned long)t2,
 					   (unsigned long)(t2 - t1));
 #endif
-				printf("TX: Send string: [%s]\r\n", msg);
+#endif
+#ifndef RADIOAPP_USE_BINARY_PACKET
+				printf("TX: Send with Plain Text string: [%s]\r\n", msg);
+#else
+				printf("TX: Send with Buffer string: [%s]\r\n", msg);
+#endif
 
 				tx_in_flight = 1;
 			} else {
