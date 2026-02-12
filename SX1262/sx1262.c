@@ -442,13 +442,15 @@ bool SX1262_SendBuffer(SX1262_Handle *sx, const char *s) {
 		len = 64U;
 	}
 
+	uint8_t total = (uint8_t)(1U + len);
+
 	buf[0] = len;
 	memcpy(&buf[1], s, len);
     /* Set packet params for this payload length */
     pktp[0] = 0x00;
     pktp[1] = 0x08;          /* preamble 8 */
     pktp[2] = 0x00;          /* explicit header */
-    pktp[3] = len;           /* payload length */
+    pktp[3] = total;           /* payload length */
     pktp[4] = 0x01;          /* CRC on */
     pktp[5] = 0x00;          /* IQ normal */
     if (!sx_cmd_write(sx, SX126X_CMD_SET_PACKET_PARAMS, pktp, 6)) {
