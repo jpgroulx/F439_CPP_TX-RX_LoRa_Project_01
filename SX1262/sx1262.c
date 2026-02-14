@@ -478,7 +478,7 @@ bool SX1262_SendBuffer(SX1262_Handle *sx, const char *s) {
             cs_high(sx);
             return false;
         }
-        if (!spi_tx(sx, (uint8_t *)buf, len)) {
+        if (!spi_tx(sx, (uint8_t *)buf, total)) {
             cs_high(sx);
             return false;
         }

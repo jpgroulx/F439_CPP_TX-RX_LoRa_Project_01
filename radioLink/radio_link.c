@@ -11,19 +11,22 @@
 #include "radio_link.h"
 #include <memory.h>
 
-
 bool RadioLink_SendString(SX1262_Handle *sx, const char *s)
 {
     bool status = false;
+    uint8_t buf[256];
+    size_t len;
 
     if (!sx || !s) {
         return false;
     }
 
-    status = SX1262_SendString(sx, s);
+    status = SX1262_SendBuffer(sx, (const char *)s);
 
     return status;
 }
+
+
 
 bool RadioLink_TryDecodeToString(const uint8_t *rx,
                                 uint8_t rx_len,

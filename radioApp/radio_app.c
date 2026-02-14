@@ -74,7 +74,7 @@ void RadioApp_Loop(void) {
 			    status = RadioLink_TryDecodeToString(r.payload,
 			                                        r.payload_len,
 			                                        s,
-			                                        (uint8_t)sizeof(s));
+													(uint8_t)(sizeof(s) - 1U));
 
 			#ifndef RF_DEBUG
 			    if (status) {
