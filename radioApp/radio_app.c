@@ -7,6 +7,7 @@
 
 
 #include "radio_app.h"
+#include "radio_link.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -67,20 +68,22 @@ void RadioApp_Loop(void) {
 #endif
 
 			if (r.rx_done && !r.crc_error) {
-				uint8_t n = r.payload[0];
-				char s[256];
+			    char s[256];
+			    bool status = false;
 
-				if (n > (uint8_t)(r.payload_len - 1)) {
-					n = (uint8_t)(r.payload_len - 1);
-				}
+			    status = RadioLink_TryDecodeToString(r.payload,
+			                                        r.payload_len,
+			                                        s,
+			                                        (uint8_t)sizeof(s));
 
-				memcpy(s, &r.payload[1], n);
-				s[n] = 0;
-
-#ifndef RF_DEBUG
-				printf("RX: %s RSSI=%d SNR=%d\r\n", s, r.rssi_pkt, r.snr_pkt);
-#endif
+			#ifndef RF_DEBUG
+			    if (status) {
+			        printf("RX: %s RSSI=%d SNR=%d\r\n", s, r.rssi_pkt, r.snr_pkt);
+			    }
+			#endif
 			}
+
+
 		}
     } else {
 		static uint32_t last_send_ms;
@@ -108,7 +111,11 @@ void RadioApp_Loop(void) {
 
 			t1 = HAL_GetTick();
 #endif
-			if (SX1262_SendString(g_sx, msg)) {
+			bool status = false;
+
+			status = RadioLink_SendString(g_sx, msg);
+
+			if (status) {
 #ifdef RF_DEBUG
 				t2 = HAL_GetTick();
 
