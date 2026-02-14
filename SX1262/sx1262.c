@@ -428,6 +428,91 @@ bool SX1262_SendStringPlainText(SX1262_Handle *sx, const char *s) {
     return ok;
 }
 
+bool SX1262_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len)
+{
+    uint8_t pktp[6];
+    uint8_t t[3];
+    bool ok;
+
+    if (!sx || !buf || len == 0U) {
+        return false;
+    }
+
+    /* Set packet params for this payload length (NO extra framing here). */
+    pktp[0] = 0x00;
+    pktp[1] = 0x08;          /* preamble 8 */
+    pktp[2] = 0x00;          /* explicit header */
+    pktp[3] = len;           /* payload length */
+    pktp[4] = 0x01;          /* CRC on */
+    pktp[5] = 0x00;          /* IQ normal */
+    if (!sx_cmd_write(sx, SX126X_CMD_SET_PACKET_PARAMS, pktp, 6)) {
+        return false;
+    }
+
+#ifdef RF_DEBUG
+    memcpy(g_last_pkt, pktp, sizeof(pktp));
+#endif
+
+    /* Clear TX_DONE + TIMEOUT before starting */
+    {
+        uint16_t m = (uint16_t)(SX126X_IRQ_TX_DONE | SX126X_IRQ_RX_TX_TIMEOUT);
+        uint8_t clr[2] = { (uint8_t)(m >> 8), (uint8_t)m };
+        sx_cmd_write(sx, SX126X_CMD_CLEAR_IRQ_STATUS, clr, 2);
+    }
+
+    /* WRITE_BUFFER (0x0E), offset 0 */
+    {
+        uint8_t hdr[2] = { SX126X_CMD_WRITE_BUFFER, 0x00 };
+
+        if (!wait_busy(sx, 10)) {
+            Error_Handler();
+        }
+
+        cs_low(sx);
+
+        if (!spi_tx(sx, hdr, 2)) {
+            cs_high(sx);
+            return false;
+        }
+
+        if (!spi_tx(sx, (uint8_t *)buf, len)) {
+            cs_high(sx);
+            return false;
+        }
+
+        cs_high(sx);
+
+        if (!wait_busy(sx, 100)) {
+            Error_Handler();
+        }
+    }
+
+    /* Start TX with ~2s radio timeout (doesn't block CPU) */
+    t[0] = 0x01;
+    t[1] = 0xF4;
+    t[2] = 0x00;
+
+    rf_to_tx(sx);
+
+    /* tiny settle (debug only) */
+    for (volatile int i = 0; i < 2000; i++) {
+    }
+
+    ok = sx_cmd_write(sx, SX126X_CMD_SET_TX, t, 3);
+
+#ifdef RF_DEBUG
+    {
+        uint8_t status = SX1262_GetStatusRaw(sx);
+
+        printf("after SET_TX status=0x%02X BUSY=%d\r\n",
+               status,
+               (int)HAL_GPIO_ReadPin(sx->BUSY_Port, sx->BUSY_Pin));
+    }
+#endif
+
+    return ok;
+}
+
 bool SX1262_SendBuffer(SX1262_Handle *sx, const char *s) {
     uint8_t pktp[6];
     uint8_t t[3];
@@ -652,5 +737,3 @@ bool SX1262_SetStandbyRc(SX1262_Handle *sx) {
     uint8_t b = 0x00; /* STDBY_RC */
     return sx_cmd_write(sx, SX126X_CMD_SET_STANDBY, &b, 1);
 }
-
-

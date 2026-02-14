@@ -83,6 +83,8 @@ void SX1262_ClearIrq(SX1262_Handle *sx, uint16_t mask);
 bool SX1262_SetStandbyRc(SX1262_Handle *sx);
 bool SX1262_SendBuffer(SX1262_Handle *sx, const char *buf);
 bool SX1262_SendStringPlainText(SX1262_Handle *sx, const char *s);
+bool SX1262_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len);
+
 
 /*
  * Call SX1262_ProcessIrq() when DIO1 interrupt fires.

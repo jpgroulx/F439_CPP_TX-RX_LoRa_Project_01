@@ -14,9 +14,21 @@
 
 #include "sx1262.h"
 
+/* Wire format v0:
+ *   [ u8 payload_len | payload_bytes... ]
+ *
+ * payload_len is the number of payload bytes that follow.
+ * Total on-air length = 1 + payload_len.
+ */
+#define RADIOLINK_WIRE_V0_HDR_LEN          (1U)
+#define RADIOLINK_WIRE_V0_MAX_PAYLOAD_LEN  (255U)
+#define RADIOLINK_WIRE_V0_MAX_FRAME_LEN    (256U)
+
+
 bool RadioLink_SendString(SX1262_Handle *sx, const char *s);
 
 bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, uint8_t out_max);
 
+uint8_t RadioLink_WireV0_FrameLenFromPayloadLen(uint8_t payload_len);
 
 #endif /* RADIO_LINK_H_ */
