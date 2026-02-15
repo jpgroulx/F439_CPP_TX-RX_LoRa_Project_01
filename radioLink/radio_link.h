@@ -24,6 +24,17 @@
 #define RADIOLINK_WIRE_V0_MAX_PAYLOAD_LEN  (255U)
 #define RADIOLINK_WIRE_V0_MAX_FRAME_LEN    (256U)
 
+/* Wire v1 (Counters / Replay) */
+#define RADIOLINK_WIRE_V1_VERSION            (0x01U)
+
+/* v1 header: [ver(1) | node_id(1) | counter_le(4) | payload_len(1)] */
+#define RADIOLINK_WIRE_V1_HDR_LEN            (1U + 1U + 4U + 1U)
+
+/* Keep payload bound small for now (matches planned radio_msg_t payload[64]) */
+#define RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN    (64U)
+#define RADIOLINK_WIRE_V1_MAX_FRAME_LEN      (RADIOLINK_WIRE_V1_HDR_LEN + RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN)
+
+
 
 bool RadioLink_SendString(SX1262_Handle *sx, const char *s);
 bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, uint8_t out_max);
