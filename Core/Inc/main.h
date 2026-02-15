@@ -80,8 +80,6 @@ extern "C" {
 #define SX1262_BUSY_Pin GPIO_PIN_12
 #define SX1262_BUSY_GPIO_Port GPIOC
 
-#define RADIOAPP_USE_BINARY_PACKET0
-
 typedef enum {
 	SX_ROLE_RX = 0,
 	SX_ROLE_TX
