@@ -26,6 +26,7 @@
 #include <sys/unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include "ada1897_mb85rs64b.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -140,7 +141,29 @@ int main(void)
   MX_CRYP_Init();
   /* USER CODE BEGIN 2 */
 
+  FRAM_CS_DISABLE;
+
+  FRAM_init(&hspi1);
+
   printf("\x1b[2J\x1b[H");	// Clear the dumb terminal screen
+
+#ifdef FRAM_TESST
+  char sendBuf[512] = {0x00};
+  char recvBuf[512] = {0x00};
+  uint16_t address = 0x0000;
+  sprintf(sendBuf, "0123456789");
+  int len = strlen(sendBuf);
+
+  for (int i = 0; i < len; i ++) {	// We want to write out the strings NULL termination
+	  FRAM_write((uint16_t) i + address, (uint8_t) sendBuf[i]);
+  }
+
+  printf("Now Reading from FRAM @ address 0x%4.4x\r\n", address);
+
+  for (int i = 0; i < len; i ++) {
+	  recvBuf[i] = FRAM_read(address + i);
+  }
+#endif
 
   /* TODO: Fill these in from your UART prints (one-time) */
   const uint32_t RX_UID0 = 0x00280024U;
@@ -328,7 +351,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -450,6 +473,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(SX1262_CS_GPIO_Port, SX1262_CS_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(SPI1_FRAM_CS_GPIO_Port, SPI1_FRAM_CS_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SX1262_NRESET_GPIO_Port, SX1262_NRESET_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pins : SX1262_TX_ENABLE_Pin SX1262_RX_ENABLE_Pin */
@@ -478,6 +504,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : SPI1_FRAM_CS_Pin */
+  GPIO_InitStruct.Pin = SPI1_FRAM_CS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(SPI1_FRAM_CS_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : DIO1_LORA_Pin */
   GPIO_InitStruct.Pin = DIO1_LORA_Pin;

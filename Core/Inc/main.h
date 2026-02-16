@@ -56,7 +56,27 @@ extern "C" {
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-
+#define SX1262_TX_ENABLE_Pin GPIO_PIN_6
+#define SX1262_TX_ENABLE_GPIO_Port GPIOF
+#define SX1262_RX_ENABLE_Pin GPIO_PIN_7
+#define SX1262_RX_ENABLE_GPIO_Port GPIOF
+#define MCO_Pin GPIO_PIN_0
+#define MCO_GPIO_Port GPIOH
+#define USB_PowerSwitchOn_Pin GPIO_PIN_6
+#define USB_PowerSwitchOn_GPIO_Port GPIOG
+#define USB_OverCurrent_Pin GPIO_PIN_7
+#define USB_OverCurrent_GPIO_Port GPIOG
+#define SX1262_CS_Pin GPIO_PIN_9
+#define SX1262_CS_GPIO_Port GPIOC
+#define SPI1_FRAM_CS_Pin GPIO_PIN_15
+#define SPI1_FRAM_CS_GPIO_Port GPIOA
+#define DIO1_LORA_Pin GPIO_PIN_10
+#define DIO1_LORA_GPIO_Port GPIOC
+#define DIO1_LORA_EXTI_IRQn EXTI15_10_IRQn
+#define SX1262_NRESET_Pin GPIO_PIN_11
+#define SX1262_NRESET_GPIO_Port GPIOC
+#define SX1262_BUSY_Pin GPIO_PIN_12
+#define SX1262_BUSY_GPIO_Port GPIOC
 
 /* USER CODE BEGIN Private defines */
 
