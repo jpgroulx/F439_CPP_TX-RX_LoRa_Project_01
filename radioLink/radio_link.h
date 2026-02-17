@@ -15,6 +15,11 @@
 
 #include "sx1262.h"
 
+/* Persistence policy */
+#define RL_PERSIST_ENABLE                 1
+#define RL_PERSIST_DISABLE_WHEN_DEBUGGER  1
+
+
 /* Wire format v0:
  *   [ u8 payload_len | payload_bytes... ]
  *

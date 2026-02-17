@@ -18,6 +18,43 @@ static uint32_t g_radiolink_last_seen_counter[256];
 static uint8_t g_radiolink_seen[256];
 
 
+static bool RadioLink_DebuggerAttached(void)
+{
+	volatile uint32_t dhcsr;
+	bool attached;
+
+#if defined(CoreDebug)
+	/* DHCSR.C_DEBUGEN bit indicates debugger connected/enabled */
+	dhcsr = CoreDebug->DHCSR;
+	attached = ((dhcsr & 0x00000001UL) != 0U);
+#else
+	attached = false;
+#endif
+
+	return attached;
+}
+
+static bool RadioLink_PersistAllowed(void)
+{
+	bool allowed;
+
+	allowed = true;
+
+#if (RL_PERSIST_ENABLE == 0)
+	allowed = false;
+#endif
+
+#if (RL_PERSIST_DISABLE_WHEN_DEBUGGER == 1)
+	if (RadioLink_DebuggerAttached()) {
+		allowed = false;
+	}
+#endif
+
+	return allowed;
+}
+
+
+
 
 static void RadioLink_TxCounter_Store(uint32_t v)
 {
@@ -230,7 +267,11 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len)
 	if (g_radiolink_tx_counter == 0U)
 	{
 		/* Initialize once per boot from persistent store. */
-		g_radiolink_tx_counter = RadioLink_TxCounter_Load();
+		if (RadioLink_PersistAllowed()) {
+			g_radiolink_tx_counter = RadioLink_TxCounter_Load();
+		} else {
+			g_radiolink_tx_counter = 0;
+		}
 	}
 
 	counter = g_radiolink_tx_counter;
@@ -250,9 +291,10 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len)
 
 	if (status)
 	{
-		g_radiolink_tx_counter = counter + 1U;
-		RadioLink_TxCounter_Store(g_radiolink_tx_counter);
-
+		if (RadioLink_PersistAllowed()) {
+			g_radiolink_tx_counter = counter + 1U;
+			RadioLink_TxCounter_Store(g_radiolink_tx_counter);
+		}
 	}
 
 

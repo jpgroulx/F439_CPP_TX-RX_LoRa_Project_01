@@ -19,6 +19,8 @@ SPI_HandleTypeDef *hspi;
 
 void FRAM_init(SPI_HandleTypeDef *hspix)
 {
+	FRAM_CS_DISABLE;
+
 	uint8_t spiCMD;
 	HAL_StatusTypeDef halStatus = HAL_OK;
 
