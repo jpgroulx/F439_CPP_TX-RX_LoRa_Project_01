@@ -147,7 +147,7 @@ int main(void)
 
   printf("\x1b[2J\x1b[H");	// Clear the dumb terminal screen
 
-#ifdef FRAM_TESST
+#ifdef FRAM_TEST
   char sendBuf[512] = {0x00};
   char recvBuf[512] = {0x00};
   uint16_t address = 0x0000;
@@ -163,6 +163,76 @@ int main(void)
   for (int i = 0; i < len; i ++) {
 	  recvBuf[i] = FRAM_read(address + i);
   }
+
+  fflush(stdout);
+#endif
+
+
+#ifdef FRAM_INIT_EPOCH
+	/* One-time init: clear epoch storage. */
+  char sendBuf[1024];
+  size_t len = sizeof(sendBuf);
+  memset(sendBuf, 0x00, len);
+
+  FRAM_WriteBytes(0x0000, (uint8_t *)sendBuf, len);
+
+  Error_Handler();
+#else
+	{
+#ifdef WRITE_BYTES_TEST
+		uint32_t epoch = 0xff;
+		uint32_t value = 0xff;
+
+		FRAM_ReadBytes(0x0000, (uint8_t *) &epoch, sizeof(epoch));
+
+		/* Increment once per boot */
+		epoch++;
+
+		/* Store epoch back (LE32) */
+		FRAM_WriteBytes(0x0000, (uint8_t *)&epoch, sizeof(epoch));
+
+		printf("TX: epoch=%lu\r\n", (unsigned long)epoch);
+
+		/* Load epoch (LE32) */
+		FRAM_ReadBytes(0x0000, (uint8_t *) &value, sizeof(epoch));
+
+
+		while (1) { };
+#else
+		bool hold = true;
+		uint32_t epoch = 0;
+		uint8_t b0 = 0;
+		uint8_t b1 = 0;
+		uint8_t b2 = 0;
+		uint8_t b3 = 0;
+
+		while (hold) {
+			HAL_Delay(10);
+		}
+
+		/* Load epoch (LE32) from 0x0010..0x0013 */
+		FRAM_read(0x0000, &b0);
+		FRAM_read(0x0001, &b1);
+		FRAM_read(0x0002, &b2);
+		FRAM_read(0x0003, &b3);
+
+		epoch = ((uint32_t)b0) |
+		        ((uint32_t)b1 << 8) |
+		        ((uint32_t)b2 << 16) |
+		        ((uint32_t)b3 << 24);
+
+		/* Increment once per boot */
+		epoch++;
+
+		/* Store epoch back (LE32) */
+		FRAM_write(0x0000, (uint8_t)(epoch & 0xFFU));
+		FRAM_write(0x0001, (uint8_t)((epoch >> 8) & 0xFFU));
+		FRAM_write(0x0002, (uint8_t)((epoch >> 16) & 0xFFU));
+		FRAM_write(0x0003, (uint8_t)((epoch >> 24) & 0xFFU));
+
+		while (1) { };
+#endif
+	}
 #endif
 
   /* TODO: Fill these in from your UART prints (one-time) */
@@ -498,17 +568,17 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USB_OverCurrent_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : SX1262_CS_Pin SX1262_NRESET_Pin */
-  GPIO_InitStruct.Pin = SX1262_CS_Pin|SX1262_NRESET_Pin;
+  /*Configure GPIO pin : SX1262_CS_Pin */
+  GPIO_InitStruct.Pin = SX1262_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  HAL_GPIO_Init(SX1262_CS_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : SPI1_FRAM_CS_Pin */
   GPIO_InitStruct.Pin = SPI1_FRAM_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(SPI1_FRAM_CS_GPIO_Port, &GPIO_InitStruct);
 
@@ -517,6 +587,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(DIO1_LORA_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : SX1262_NRESET_Pin */
+  GPIO_InitStruct.Pin = SX1262_NRESET_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(SX1262_NRESET_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : SX1262_BUSY_Pin */
   GPIO_InitStruct.Pin = SX1262_BUSY_Pin;

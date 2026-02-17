@@ -17,39 +17,39 @@ static uint32_t g_radiolink_tx_counter;
 static uint32_t g_radiolink_last_seen_counter[256];
 static uint8_t g_radiolink_seen[256];
 
-static uint32_t RadioLink_TxCounter_Load(void)
-{
-	uint32_t v = 0;
-
-	/* Flash-backed counter (read-only in this task). If erased, default to 0. */
-	{
-		/* Choose an address near the end of flash; adjust later if needed. */
-		const uint32_t *p = (const uint32_t *)0x080FFFFCU;
-		uint32_t raw = *p;
-
-		if (raw != 0xFFFFFFFFU)
-		{
-			v = raw;
-		}
-		else
-		{
-			v = 0;
-		}
-	}
-
-	return v;
-}
 
 
 static void RadioLink_TxCounter_Store(uint32_t v)
 {
-#if defined(HAL_RTCEx_BKUPWrite)
-	extern RTC_HandleTypeDef hrtc;
-	HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR0, v);
-#else
-	(void)v;
-#endif
+	/* TX counter stored at FRAM[0x0000..0x0003] (LE32) */
+	FRAM_write(0x0000, (uint8_t)(v & 0xFFU));
+	FRAM_write(0x0001, (uint8_t)((v >> 8) & 0xFFU));
+	FRAM_write(0x0002, (uint8_t)((v >> 16) & 0xFFU));
+	FRAM_write(0x0003, (uint8_t)((v >> 24) & 0xFFU));
 }
+
+static uint32_t RadioLink_TxCounter_Load(void)
+{
+	uint32_t v = 0;
+	uint8_t b0;
+	uint8_t b1;
+	uint8_t b2;
+	uint8_t b3;
+
+	/* TX counter stored at FRAM[0x0000..0x0003] (LE32) */
+	FRAM_read(0x0001, &b0);
+	FRAM_read(0x0002, &b1);
+	FRAM_read(0x0003, &b2);
+	FRAM_read(0x0004, &b3);
+
+	v = ((uint32_t)b0) |
+	    ((uint32_t)b1 << 8) |
+	    ((uint32_t)b2 << 16) |
+	    ((uint32_t)b3 << 24);
+
+	return v;
+}
+
 
 static void RadioLink_EncodeLe32(uint8_t out[4], uint32_t v)
 {

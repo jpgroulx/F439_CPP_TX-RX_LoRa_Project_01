@@ -11,6 +11,7 @@
 #include <main.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "ada1897_mb85rs64b.h"
 
 #include "sx1262.h"
 
