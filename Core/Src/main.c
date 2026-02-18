@@ -26,6 +26,7 @@
 #include <sys/unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include "ada1897_mb85rs64b.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,6 +45,10 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+CRYP_HandleTypeDef hcryp;
+__ALIGN_BEGIN static const uint32_t pKeyCRYP[6] __ALIGN_END = {
+                            0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000};
+
 SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim3;
@@ -61,6 +66,7 @@ static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_CRYP_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -98,6 +104,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t pin) {
     RadioApp_OnDio1Exti(pin);
 }
 
+void delay_us (uint16_t us)
+{
+	__HAL_TIM_SET_COUNTER(&htim3, 0);  // set the counter value a 0
+	while (__HAL_TIM_GET_COUNTER(&htim3) < us);  // wait for the counter to reach the us input in the parameter
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -132,9 +144,24 @@ int main(void)
   MX_SPI1_Init();
   MX_USART1_UART_Init();
   MX_TIM3_Init();
+  MX_CRYP_Init();
   /* USER CODE BEGIN 2 */
 
+  HAL_TIM_Base_Start_IT(&htim3);  // start the Timer3
+
+  FRAM_init(&hspi1);
+
   printf("\x1b[2J\x1b[H");	// Clear the dumb terminal screen
+
+#ifdef FRAM_INIT_EPOCH
+	/* One-time init: clear storage region (start of FRAM map). */
+	static uint8_t zeros[FRAM_INIT_BYTES];
+
+	memset(zeros, 0x00, sizeof(zeros));
+	FRAM_WriteBytes(FRAM_BASE_ADDR, zeros, sizeof(zeros));
+
+	while(1) {};
+#endif
 
   /* TODO: Fill these in from your UART prints (one-time) */
   const uint32_t RX_UID0 = 0x00280024U;
@@ -270,6 +297,36 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief CRYP Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CRYP_Init(void)
+{
+
+  /* USER CODE BEGIN CRYP_Init 0 */
+
+  /* USER CODE END CRYP_Init 0 */
+
+  /* USER CODE BEGIN CRYP_Init 1 */
+
+  /* USER CODE END CRYP_Init 1 */
+  hcryp.Instance = CRYP;
+  hcryp.Init.DataType = CRYP_DATATYPE_32B;
+  hcryp.Init.pKey = (uint32_t *)pKeyCRYP;
+  hcryp.Init.Algorithm = CRYP_TDES_ECB;
+  hcryp.Init.DataWidthUnit = CRYP_DATAWIDTHUNIT_WORD;
+  if (HAL_CRYP_Init(&hcryp) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CRYP_Init 2 */
+
+  /* USER CODE END CRYP_Init 2 */
+
+}
+
+/**
   * @brief SPI1 Initialization Function
   * @param None
   * @retval None
@@ -292,7 +349,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -326,7 +383,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 0;
+  htim3.Init.Prescaler = 90 - 1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 65535;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -414,6 +471,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(SX1262_CS_GPIO_Port, SX1262_CS_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(SPI1_FRAM_CS_GPIO_Port, SPI1_FRAM_CS_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SX1262_NRESET_GPIO_Port, SX1262_NRESET_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pins : SX1262_TX_ENABLE_Pin SX1262_RX_ENABLE_Pin */
@@ -436,18 +496,32 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USB_OverCurrent_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : SX1262_CS_Pin SX1262_NRESET_Pin */
-  GPIO_InitStruct.Pin = SX1262_CS_Pin|SX1262_NRESET_Pin;
+  /*Configure GPIO pin : SX1262_CS_Pin */
+  GPIO_InitStruct.Pin = SX1262_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  HAL_GPIO_Init(SX1262_CS_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : SPI1_FRAM_CS_Pin */
+  GPIO_InitStruct.Pin = SPI1_FRAM_CS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(SPI1_FRAM_CS_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : DIO1_LORA_Pin */
   GPIO_InitStruct.Pin = DIO1_LORA_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(DIO1_LORA_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : SX1262_NRESET_Pin */
+  GPIO_InitStruct.Pin = SX1262_NRESET_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(SX1262_NRESET_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : SX1262_BUSY_Pin */
   GPIO_InitStruct.Pin = SX1262_BUSY_Pin;

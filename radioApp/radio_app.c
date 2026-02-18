@@ -7,6 +7,7 @@
 
 
 #include "radio_app.h"
+#include "radio_link.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -46,54 +47,60 @@ void RadioApp_OnDio1Exti(uint16_t pin) {
 }
 
 void RadioApp_Loop(void) {
-    if (sx1262Role == SX_ROLE_RX) {
-		if (g_irq) {
-			SX1262_IrqResult r;
+	if (sx1262Role == SX_ROLE_RX) {
+		if (!g_irq) {
+			return;
+		}
 
-			g_irq = 0;
+		SX1262_IrqResult r;
+		g_irq = 0;
 
-			if (!SX1262_ProcessIrq(g_sx, &r)) {
-				return;
-			}
+		if (!SX1262_ProcessIrq(g_sx, &r)) {
+			return;
+		}
 
 #ifdef RF_DEBUG
-			printf("IRQ: rx_done=%u tx_done=%u crc_error=%u timeout=%u payload_len=%u first=%02X\r\n",
-				   (unsigned)r.rx_done,
-				   (unsigned)r.tx_done,
-				   (unsigned)r.crc_error,
-				   (unsigned)r.timeout,
-				   (unsigned)r.payload_len,
-				   (unsigned)r.payload[0]);
+		printf("IRQ: rx_done=%u tx_done=%u crc_error=%u timeout=%u payload_len=%u first=%02X\r\n",
+		       (unsigned)r.rx_done,
+		       (unsigned)r.tx_done,
+		       (unsigned)r.crc_error,
+		       (unsigned)r.timeout,
+		       (unsigned)r.payload_len,
+		       (unsigned)r.payload[0]);
 #endif
 
-			if (r.rx_done && !r.crc_error) {
-				uint8_t n = r.payload[0];
-				char s[256];
+		if (r.rx_done && !r.crc_error) {
+			char s[256];
+			bool status = false;
 
-				if (n > (uint8_t)(r.payload_len - 1)) {
-					n = (uint8_t)(r.payload_len - 1);
-				}
+			printf("RXHDR: %02X %02X %02X %02X %02X %02X %02X len=%u\r\n",
+			       (unsigned)r.payload[0],
+			       (unsigned)r.payload[1],
+			       (unsigned)r.payload[2],
+			       (unsigned)r.payload[3],
+			       (unsigned)r.payload[4],
+			       (unsigned)r.payload[5],
+			       (unsigned)r.payload[6],
+			       (unsigned)r.payload_len);
 
-				memcpy(s, &r.payload[1], n);
-				s[n] = 0;
-
+			status = RadioLink_TryDecodeToString(r.payload, r.payload_len, s, (uint8_t)(sizeof(s) - 1U));
 #ifndef RF_DEBUG
+			if (status) {
 				printf("RX: %s RSSI=%d SNR=%d\r\n", s, r.rssi_pkt, r.snr_pkt);
-#endif
 			}
+#endif
 		}
-    } else {
+	} else {	/* TX role */
 		static uint32_t last_send_ms;
 		static uint32_t counter;
 		static uint8_t tx_in_flight;
-
-
-	//    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
 
 		uint32_t now = HAL_GetTick();
 
 		if (!tx_in_flight && (now - last_send_ms) >= 1000U) {
 			char msg[64];
+			bool status = false;
+
 #ifdef RF_DEBUG
 			uint32_t t1;
 			uint32_t t2;
@@ -105,30 +112,35 @@ void RadioApp_Loop(void) {
 
 #ifdef RF_DEBUG
 			printf("[%lu] TX start request\r\n", (unsigned long)t0);
-
 			t1 = HAL_GetTick();
 #endif
-			if (SX1262_SendString(g_sx, msg)) {
+
+			status = RadioLink_SendString(g_sx, msg);
+
+#ifndef RF_DEBUG
+			if (status) {
+				printf("TX: STR [%s]\r\n", msg);
+			}
+#endif
+
 #ifdef RF_DEBUG
+			if (status) {
 				t2 = HAL_GetTick();
-
-				printf("[%lu] SendString dt=%lums\r\n",
-					   (unsigned long)t2,
-					   (unsigned long)(t2 - t1));
-#endif
-				printf("TX: Send string: [%s]\r\n", msg);
-
-				tx_in_flight = 1;
+				printf("[%lu] TX started dt=%lums\r\n",
+				       (unsigned long)t2,
+				       (unsigned long)(t2 - t1));
 			} else {
-#ifdef RF_DEBUG
 				printf("[%lu] TX start failed\r\n", (unsigned long)HAL_GetTick());
+			}
 #endif
+
+			if (status) {
+				tx_in_flight = 1;
 			}
 		}
 
 		if (g_irq) {
 			SX1262_IrqResult r;
-
 			g_irq = 0;
 
 			if (!SX1262_ProcessIrq(g_sx, &r)) {
@@ -137,16 +149,17 @@ void RadioApp_Loop(void) {
 
 			if (r.tx_done || r.timeout) {
 				tx_in_flight = 0;
+
 #ifdef RF_DEBUG
 				if (r.tx_done) {
 					printf("[%lu] TX done\r\n", (unsigned long)HAL_GetTick());
-				} else {
+				}
+				else
+				{
 					printf("TX timeout\r\n");
 				}
 #endif
 			}
 		}
-    }
+	}
 }
-
-
