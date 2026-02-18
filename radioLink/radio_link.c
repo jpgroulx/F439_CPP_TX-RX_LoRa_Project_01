@@ -14,9 +14,54 @@
 #include "memory.h"
 
 static uint32_t g_radiolink_tx_counter;
-
+static uint32_t g_radiolink_sessionSeqId;
 static uint32_t g_radiolink_last_seen_counter[256];
 static uint8_t g_radiolink_seen[256];
+
+static bool RadioLink_SessionSeqId_Store(uint32_t v) {
+    bool ok;
+    uint8_t buf[4];
+    uint16_t addr;
+
+    ok = false;
+    addr = (uint16_t)(FRAM_BASE_ADDR + 4U);
+
+    buf[0] = (uint8_t)((v >> 0) & 0xFFU);
+    buf[1] = (uint8_t)((v >> 8) & 0xFFU);
+    buf[2] = (uint8_t)((v >> 16) & 0xFFU);
+    buf[3] = (uint8_t)((v >> 24) & 0xFFU);
+
+    ok = FRAM_WriteBytes(addr, buf, (uint16_t)sizeof(buf));
+    return ok;
+}
+
+static bool RadioLink_SessionSeqId_Load(uint32_t *out_sessionSeqId) {
+    bool ok;
+    uint8_t buf[4];
+    uint32_t v;
+    uint16_t addr;
+
+    ok = false;
+    v = 0U;
+    addr = (uint16_t)(FRAM_BASE_ADDR + 4U);
+
+    if (out_sessionSeqId == NULL) {
+        return false;
+    }
+
+    ok = FRAM_ReadBytes(addr, buf, (uint16_t)sizeof(buf));
+    if (!ok) {
+        return false;
+    }
+
+    v = ((uint32_t)buf[0] << 0) |
+        ((uint32_t)buf[1] << 8) |
+        ((uint32_t)buf[2] << 16) |
+        ((uint32_t)buf[3] << 24);
+
+    *out_sessionSeqId = v;
+    return true;
+}
 
 
 static bool RadioLink_DebuggerAttached(void) {
@@ -257,19 +302,39 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
         /* Initialize once per boot from persistent store. */
         if (RadioLink_PersistAllowed()) {
             bool ok;
-            uint32_t loaded;
+            uint32_t loadedCounter;
+            uint32_t loadedSessionSeqId;
+            uint32_t nextSessionSeqId;
 
-            loaded = 0U;
-            ok = RadioLink_TxCounter_Load(&loaded);
+            loadedCounter = 0U;
+            ok = RadioLink_TxCounter_Load(&loadedCounter);
             if (ok) {
-                g_radiolink_tx_counter = loaded;
+                g_radiolink_tx_counter = loadedCounter;
             } else {
                 g_radiolink_tx_counter = 0U;
             }
+
+            /* SessionSeqId: increments once per boot/session. */
+            loadedSessionSeqId = 0U;
+            ok = RadioLink_SessionSeqId_Load(&loadedSessionSeqId);
+            if (ok) {
+                nextSessionSeqId = loadedSessionSeqId + 1U;
+            } else {
+                nextSessionSeqId = 1U;
+            }
+
+            g_radiolink_sessionSeqId = nextSessionSeqId;
+
+            /* Persist the new sessionSeqId once per boot. */
+            (void)RadioLink_SessionSeqId_Store(nextSessionSeqId);
+
+            /* TEMP: verify sessionSeqId increments once per boot */
         } else {
             g_radiolink_tx_counter = 0U;
+            g_radiolink_sessionSeqId = 0U;
         }
     }
+
 
     counter = g_radiolink_tx_counter;
 

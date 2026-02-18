@@ -159,6 +159,8 @@ int main(void)
 
 	memset(zeros, 0x00, sizeof(zeros));
 	FRAM_WriteBytes(FRAM_BASE_ADDR, zeros, sizeof(zeros));
+
+	while(1) {};
 #endif
 
   /* TODO: Fill these in from your UART prints (one-time) */
