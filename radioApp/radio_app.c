@@ -46,20 +46,16 @@ void RadioApp_OnDio1Exti(uint16_t pin) {
         g_irq = 1;
 }
 
-void RadioApp_Loop(void)
-{
-	if (sx1262Role == SX_ROLE_RX)
-	{
-		if (!g_irq)
-		{
+void RadioApp_Loop(void) {
+	if (sx1262Role == SX_ROLE_RX) {
+		if (!g_irq) {
 			return;
 		}
 
 		SX1262_IrqResult r;
 		g_irq = 0;
 
-		if (!SX1262_ProcessIrq(g_sx, &r))
-		{
+		if (!SX1262_ProcessIrq(g_sx, &r)) {
 			return;
 		}
 
@@ -73,8 +69,7 @@ void RadioApp_Loop(void)
 		       (unsigned)r.payload[0]);
 #endif
 
-		if (r.rx_done && !r.crc_error)
-		{
+		if (r.rx_done && !r.crc_error) {
 			char s[256];
 			bool status = false;
 
@@ -90,8 +85,7 @@ void RadioApp_Loop(void)
 
 			status = RadioLink_TryDecodeToString(r.payload, r.payload_len, s, (uint8_t)(sizeof(s) - 1U));
 #ifndef RF_DEBUG
-			if (status)
-			{
+			if (status) {
 				printf("RX: %s RSSI=%d SNR=%d\r\n", s, r.rssi_pkt, r.snr_pkt);
 			}
 #endif
@@ -103,8 +97,7 @@ void RadioApp_Loop(void)
 
 		uint32_t now = HAL_GetTick();
 
-		if (!tx_in_flight && (now - last_send_ms) >= 1000U)
-		{
+		if (!tx_in_flight && (now - last_send_ms) >= 1000U) {
 			char msg[64];
 			bool status = false;
 
@@ -125,49 +118,40 @@ void RadioApp_Loop(void)
 			status = RadioLink_SendString(g_sx, msg);
 
 #ifndef RF_DEBUG
-			if (status)
-			{
+			if (status) {
 				printf("TX: STR [%s]\r\n", msg);
 			}
 #endif
 
 #ifdef RF_DEBUG
-			if (status)
-			{
+			if (status) {
 				t2 = HAL_GetTick();
 				printf("[%lu] TX started dt=%lums\r\n",
 				       (unsigned long)t2,
 				       (unsigned long)(t2 - t1));
-			}
-			else
-			{
+			} else {
 				printf("[%lu] TX start failed\r\n", (unsigned long)HAL_GetTick());
 			}
 #endif
 
-			if (status)
-			{
+			if (status) {
 				tx_in_flight = 1;
 			}
 		}
 
-		if (g_irq)
-		{
+		if (g_irq) {
 			SX1262_IrqResult r;
 			g_irq = 0;
 
-			if (!SX1262_ProcessIrq(g_sx, &r))
-			{
+			if (!SX1262_ProcessIrq(g_sx, &r)) {
 				return;
 			}
 
-			if (r.tx_done || r.timeout)
-			{
+			if (r.tx_done || r.timeout) {
 				tx_in_flight = 0;
 
 #ifdef RF_DEBUG
-				if (r.tx_done)
-				{
+				if (r.tx_done) {
 					printf("[%lu] TX done\r\n", (unsigned long)HAL_GetTick());
 				}
 				else
