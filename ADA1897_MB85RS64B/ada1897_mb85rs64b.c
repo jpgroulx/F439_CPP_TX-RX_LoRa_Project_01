@@ -63,21 +63,30 @@ void FRAM_init(SPI_HandleTypeDef *hspix)
     }
 }
 
-void FRAM_write(uint16_t address, uint8_t byte)
+bool FRAM_write(uint16_t address, uint8_t byte)
 {
-	FRAM_WriteBytes(address, &byte, sizeof(byte));
+	bool status = false;
+
+	status = FRAM_WriteBytes(address, &byte, sizeof(byte));
+
+	return status;
 }
 
-void FRAM_read(uint16_t address, uint8_t *byte)
+bool FRAM_read(uint16_t address, uint8_t *byte)
 {
 	uint8_t data;
+	bool status = false;
 
-	FRAM_ReadBytes(address, &data, sizeof(data));
+	status = FRAM_ReadBytes(address, &data, sizeof(data));
 
-	*byte = data;
+	if (status) {
+		*byte = data;
+	}
+
+	return status;
 }
 
-void FRAM_WriteBytes(uint16_t address, uint8_t *pData, uint16_t size)
+bool FRAM_WriteBytes(uint16_t address, uint8_t *pData, uint16_t size)
 {
 	uint8_t spiCMD;
 	uint8_t spiAddrByte;
@@ -90,7 +99,7 @@ void FRAM_WriteBytes(uint16_t address, uint8_t *pData, uint16_t size)
     FRAM_CS_DISABLE;
 
     if (halStatus != HAL_OK) {
-    	Error_Handler();
+    	return false;
     }
 
     spiCMD = FRAM_WRITE;
@@ -101,7 +110,8 @@ void FRAM_WriteBytes(uint16_t address, uint8_t *pData, uint16_t size)
     halStatus = HAL_SPI_Transmit(hspi, &spiCMD, sizeof(spiCMD), HAL_MAX_DELAY);
 
     if (halStatus != HAL_OK) {
-    	Error_Handler();
+    	FRAM_CS_DISABLE
+    	return false;
     }
 
     //send upper 8 bits of address
@@ -109,7 +119,8 @@ void FRAM_WriteBytes(uint16_t address, uint8_t *pData, uint16_t size)
     halStatus = HAL_SPI_Transmit(hspi, &spiAddrByte, sizeof(spiAddrByte), HAL_MAX_DELAY);
 
     if (halStatus != HAL_OK) {
-    	Error_Handler();
+    	FRAM_CS_DISABLE
+    	return false;
     }
 
     //send lower 8 bits of address
@@ -117,21 +128,25 @@ void FRAM_WriteBytes(uint16_t address, uint8_t *pData, uint16_t size)
     halStatus = HAL_SPI_Transmit(hspi, &spiAddrByte, sizeof(spiAddrByte), HAL_MAX_DELAY);
 
     if (halStatus != HAL_OK) {
-    	Error_Handler();
+    	FRAM_CS_DISABLE
+    	return false;
     }
 
     //sent data byte
     halStatus = HAL_SPI_Transmit(hspi, pData, size, HAL_MAX_DELAY);
 
     if (halStatus != HAL_OK) {
-    	Error_Handler();
+    	FRAM_CS_DISABLE
+    	return false;
     }
 
     //disable Chip Select
     FRAM_CS_DISABLE;
+
+    return true;
 }
 
-void FRAM_ReadBytes(uint16_t address, uint8_t *pData, uint16_t size)
+bool FRAM_ReadBytes(uint16_t address, uint8_t *pData, uint16_t size)
 {
 	uint8_t spiCMD;
 	uint8_t spiAddrByte;
@@ -146,7 +161,8 @@ void FRAM_ReadBytes(uint16_t address, uint8_t *pData, uint16_t size)
     halStatus = HAL_SPI_Transmit(hspi, &spiCMD, sizeof(spiCMD), HAL_MAX_DELAY);
 
     if (halStatus != HAL_OK) {
-    	Error_Handler();
+        FRAM_CS_DISABLE;
+    	return false;
     }
 
     //send upper 8 bits of address
@@ -154,7 +170,8 @@ void FRAM_ReadBytes(uint16_t address, uint8_t *pData, uint16_t size)
     halStatus = HAL_SPI_Transmit(hspi, &spiAddrByte, sizeof(spiAddrByte), HAL_MAX_DELAY);
 
     if (halStatus != HAL_OK) {
-    	Error_Handler();
+        FRAM_CS_DISABLE;
+    	return false;
     }
 
     //send lower 8 bits of address
@@ -162,16 +179,20 @@ void FRAM_ReadBytes(uint16_t address, uint8_t *pData, uint16_t size)
     halStatus = HAL_SPI_Transmit(hspi, &spiAddrByte, sizeof(spiAddrByte), HAL_MAX_DELAY);
 
     if (halStatus != HAL_OK) {
-    	Error_Handler();
+    	FRAM_CS_DISABLE;
+    	return false;
     }
 
     //receive data byte
     halStatus = HAL_SPI_Receive(hspi, pData, size, HAL_MAX_DELAY);
 
     if (halStatus != HAL_OK) {
-    	Error_Handler();
+    	FRAM_CS_DISABLE;
+    	return false;
     }
 
     //disable Chip Select
     FRAM_CS_DISABLE;
+
+    return true;
 }

@@ -105,6 +105,9 @@ typedef enum {
 	SX_ROLE_TX
 } SX1262_ROLE;
 
+#define FRAM_BASE_ADDR      0x0100U
+#define FRAM_INIT_BYTES     64U
+
 void _Error_Handler(const char *, int);
 	
 #define Error_Handler() _Error_Handler((const char *)__FILE__, __LINE__)

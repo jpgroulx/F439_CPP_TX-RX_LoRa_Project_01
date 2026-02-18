@@ -53,40 +53,65 @@ static bool RadioLink_PersistAllowed(void)
 	return allowed;
 }
 
-
-
-
-static void RadioLink_TxCounter_Store(uint32_t v)
+static bool RadioLink_TxCounter_Store(uint32_t counter)
 {
-	/* TX counter stored at FRAM[0x0000..0x0003] (LE32) */
-	FRAM_write(0x0000, (uint8_t)(v & 0xFFU));
-	FRAM_write(0x0001, (uint8_t)((v >> 8) & 0xFFU));
-	FRAM_write(0x0002, (uint8_t)((v >> 16) & 0xFFU));
-	FRAM_write(0x0003, (uint8_t)((v >> 24) & 0xFFU));
+    bool ok;
+    uint8_t buf[4];
+
+    ok = false;
+
+    buf[0] = (uint8_t)((counter >> 0) & 0xFFU);
+    buf[1] = (uint8_t)((counter >> 8) & 0xFFU);
+    buf[2] = (uint8_t)((counter >> 16) & 0xFFU);
+    buf[3] = (uint8_t)((counter >> 24) & 0xFFU);
+
+    ok = FRAM_WriteBytes(FRAM_BASE_ADDR,
+                         buf,
+                         (uint16_t)sizeof(buf));
+    if (!ok)
+    {
+        goto done;
+    }
+
+    ok = true;
+
+done:
+    return ok;
 }
 
-static uint32_t RadioLink_TxCounter_Load(void)
+static bool RadioLink_TxCounter_Load(uint32_t *out_counter)
 {
-	uint32_t v = 0;
-	uint8_t b0;
-	uint8_t b1;
-	uint8_t b2;
-	uint8_t b3;
+    bool ok;
+    uint8_t buf[4];
+    uint32_t v;
 
-	/* TX counter stored at FRAM[0x0000..0x0003] (LE32) */
-	FRAM_read(0x0001, &b0);
-	FRAM_read(0x0002, &b1);
-	FRAM_read(0x0003, &b2);
-	FRAM_read(0x0004, &b3);
+    ok = false;
+    v = 0U;
 
-	v = ((uint32_t)b0) |
-	    ((uint32_t)b1 << 8) |
-	    ((uint32_t)b2 << 16) |
-	    ((uint32_t)b3 << 24);
+    if (out_counter == NULL)
+    {
+        return false;
+    }
 
-	return v;
+    ok = FRAM_ReadBytes(FRAM_BASE_ADDR,
+                        buf,
+                        (uint16_t)sizeof(buf));
+    if (!ok)
+    {
+        goto done;
+    }
+
+    v = ((uint32_t)buf[0] << 0) |
+        ((uint32_t)buf[1] << 8) |
+        ((uint32_t)buf[2] << 16) |
+        ((uint32_t)buf[3] << 24);
+
+    *out_counter = v;
+    ok = true;
+
+done:
+    return ok;
 }
-
 
 static void RadioLink_EncodeLe32(uint8_t out[4], uint32_t v)
 {

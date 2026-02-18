@@ -37,9 +37,6 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define FRAM_BASE_ADDR      0x0100U
-#define FRAM_INIT_BYTES     64U
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -107,6 +104,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t pin) {
     RadioApp_OnDio1Exti(pin);
 }
 
+void delay_us (uint16_t us)
+{
+	__HAL_TIM_SET_COUNTER(&htim3, 0);  // set the counter value a 0
+	while (__HAL_TIM_GET_COUNTER(&htim3) < us);  // wait for the counter to reach the us input in the parameter
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -143,6 +146,8 @@ int main(void)
   MX_TIM3_Init();
   MX_CRYP_Init();
   /* USER CODE BEGIN 2 */
+
+  HAL_TIM_Base_Start_IT(&htim3);  // start the Timer3
 
   FRAM_init(&hspi1);
 
@@ -376,7 +381,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 0;
+  htim3.Init.Prescaler = 90 - 1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 65535;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
