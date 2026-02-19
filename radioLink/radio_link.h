@@ -16,6 +16,12 @@
 #include "sx1262.h"
 #include "radio_wire.h"
 
+// === RADIOLINK_CRYPTO_ENABLE (compile-time) ===
+#ifndef RADIOLINK_CRYPTO_ENABLE
+#define RADIOLINK_CRYPTO_ENABLE    (1)
+#endif
+// === END RADIOLINK_CRYPTO_ENABLE ===
+
 /* Persistence policy */
 #define RL_PERSIST_ENABLE                 1
 #define RL_PERSIST_DISABLE_WHEN_DEBUGGER  1
@@ -59,7 +65,11 @@
 #define RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN (RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN)
 #define RADIOLINK_WIRE_V2_MAX_FRAME_LEN (RADIOLINK_WIRE_V2_HDR_LEN + RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN)
 
-
+// === WIRE_V3_CRYPTO_CONSTANTS (public routing; derived in radio_wire.h) ===
+#define RADIOLINK_W3_VERSION                 (RADIOLINK_WIRE_V3_VERSION)
+#define RADIOLINK_W3_HDR_LEN                 (RADIOLINK_WIRE_V3_HDR_LEN_DERIVED)
+#define RADIOLINK_W3_TAG_LEN                 (RADIOLINK_WIRE_V3_TAG_LEN)
+// === END WIRE_V3_CRYPTO_CONSTANTS ===
 
 
 bool RadioLink_SendString(SX1262_Handle *sx, const char *s);
@@ -68,4 +78,13 @@ uint8_t RadioLink_WireV0_FrameLenFromPayloadLen(uint8_t payload_len);
 bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len);
 
 
+// === WIRE_V3_CRYPTO_STUBS (no behavior change) ===
+bool RadioLink_BuildWireV3Frame_Stub(const uint8_t *plain, uint8_t plainLen,
+                                    uint8_t *out, uint8_t outMax,
+                                    uint8_t *outLen);
+
+bool RadioLink_ParseWireV3Frame_Stub(const uint8_t *rx, uint8_t rxLen,
+                                    uint8_t *outPlain, uint8_t outPlainMax,
+                                    uint8_t *outPlainLen);
+// === END WIRE_V3_CRYPTO_STUBS ===
 #endif /* RADIO_LINK_H_ */

@@ -23,13 +23,49 @@ static uint32_t g_radiolink_last_seen_sessionSeqId_v2[256];
 static uint32_t g_radiolink_last_seen_counter_v2[256];
 static uint8_t g_radiolink_seen_v2[256];
 
-typedef struct {
+typedef struct radioLinkParsedV2_t{
     uint8_t nodeId;
     uint32_t sessionSeqId;
     uint32_t msgCounter;
     const uint8_t *payload;
     uint8_t payloadLen;
 } radioLinkParsedV2_t;
+
+// === RADIOLINK_CRYPTO_CONTEXT (placeholders; unused for now) ===
+typedef struct radioLinkCryptoCtx_t {
+    uint8_t masterKey[16];
+    uint8_t encKey[16];
+    uint8_t macKey[16];
+    uint8_t keyIsValid;   // 0/1
+} radioLinkCryptoCtx_t;
+
+static radioLinkCryptoCtx_t gRlCryptoCtx;
+
+static const uint8_t gRadioLinkMasterKey_Default[16] = {
+    0x00u, 0x01u, 0x02u, 0x03u, 0x04u, 0x05u, 0x06u, 0x07u,
+    0x08u, 0x09u, 0x0Au, 0x0Bu, 0x0Cu, 0x0Du, 0x0Eu, 0x0Fu
+};
+// === END RADIOLINK_CRYPTO_CONTEXT ===
+
+// === RADIOLINK_KEY_DERIVATION_STUB (unused for now) ===
+static void radioLinkDeriveKeys_Stub(radioLinkCryptoCtx_t *ctx, uint8_t nodeId)
+{
+    (void)nodeId;
+
+    if (ctx == NULL) {
+        return;
+    }
+
+    // Placeholder: copy masterKey into encKey/macKey so we have deterministic bytes.
+    // Real implementation will derive separate keys (ENC/MAC labels) using CMAC.
+    for (uint32_t i = 0u; i < 16u; i++) {
+        ctx->encKey[i] = ctx->masterKey[i];
+        ctx->macKey[i] = ctx->masterKey[i];
+    }
+
+    ctx->keyIsValid = 1u;
+}
+// === END RADIOLINK_KEY_DERIVATION_STUB ===
 
 static bool RadioLink_SessionSeqId_Store(uint32_t v) {
     bool ok;
@@ -273,6 +309,45 @@ static uint8_t RadioLink_GetNodeId(void) {
     return id;
 }
 
+// === WIRE_V3_CRYPTO_STUBS (no behavior change) ===
+// NOTE: These are placeholders only. They do NOT encrypt or authenticate yet.
+//       They exist to stabilize the API surface before wiring behavior changes.
+
+bool RadioLink_BuildWireV3Frame_Stub(const uint8_t *plain, uint8_t plainLen,
+                                    uint8_t *out, uint8_t outMax,
+                                    uint8_t *outLen)
+{
+    (void)plain;
+    (void)plainLen;
+    (void)out;
+    (void)outMax;
+
+    if (outLen == NULL) {
+        return false;
+    }
+
+    *outLen = 0;
+    return false;
+}
+
+bool RadioLink_ParseWireV3Frame_Stub(const uint8_t *rx, uint8_t rxLen,
+                                    uint8_t *outPlain, uint8_t outPlainMax,
+                                    uint8_t *outPlainLen)
+{
+    (void)rx;
+    (void)rxLen;
+    (void)outPlain;
+    (void)outPlainMax;
+
+    if (outPlainLen == NULL) {
+        return false;
+    }
+
+    *outPlainLen = 0;
+    return false;
+}
+// === END WIRE_V3_CRYPTO_STUBS ===
+
 uint8_t RadioLink_WireV0_FrameLenFromPayloadLen(uint8_t payload_len) {
     uint8_t frame_len = 0;
 
@@ -476,14 +551,29 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
     uint8_t frameLen = 0U;
     bool ok = false;
 
-    ok = RadioLink_BuildWireV2Frame(frame,
-                                   (uint8_t)sizeof(frame),
-                                   node_id,
-                                   g_radiolink_sessionSeqId,
-                                   counter,
-                                   buf,
-                                   len,
-                                   &frameLen);
+    // === WIRE_VERSION_SELECT_TX (compile-time; no behavior change yet) ===
+    #if (RADIOLINK_CRYPTO_ENABLE == 0)
+        ok = RadioLink_BuildWireV2Frame(frame,
+                                       (uint8_t)sizeof(frame),
+                                       node_id,
+                                       g_radiolink_sessionSeqId,
+                                       counter,
+                                       buf,
+                                       len,
+                                       &frameLen);
+    #else
+        // Crypto-enabled build will switch to Wire v3 later.
+        // For now, keep Wire v2 to avoid behavior change until crypto is implemented.
+        ok = RadioLink_BuildWireV2Frame(frame,
+                                       (uint8_t)sizeof(frame),
+                                       node_id,
+                                       g_radiolink_sessionSeqId,
+                                       counter,
+                                       buf,
+                                       len,
+                                       &frameLen);
+    #endif
+    // === END WIRE_VERSION_SELECT_TX ===
 
     if (!ok) {
         status = false;
