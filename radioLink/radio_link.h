@@ -40,6 +40,21 @@
 #define RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN    (64U)
 #define RADIOLINK_WIRE_V1_MAX_FRAME_LEN      (RADIOLINK_WIRE_V1_HDR_LEN + RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN)
 
+/* Wire v2 (Session + Counters / Replay)
+ * v2 header: [ver(1) | node_id(1) | sessionSeqId_le(4) | msgCounter_le(4) | payload_len(1)]
+ * Layout:
+ *   [0]    version=2
+ *   [1]    nodeId
+ *   [2..5] sessionSeqId LE32
+ *   [6..9] msgCounter  LE32
+ *   [10]   payloadLen
+ *   [11..] payload bytes
+ */
+#define RADIOLINK_WIRE_V2_VERSION (0x02U)
+#define RADIOLINK_WIRE_V2_HDR_LEN (1U + 1U + 4U + 4U + 1U)
+#define RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN (RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN)
+#define RADIOLINK_WIRE_V2_MAX_FRAME_LEN (RADIOLINK_WIRE_V2_HDR_LEN + RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN)
+
 
 
 bool RadioLink_SendString(SX1262_Handle *sx, const char *s);
