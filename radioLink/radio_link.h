@@ -14,6 +14,7 @@
 #include "ada1897_mb85rs64b.h"
 
 #include "sx1262.h"
+#include "radio_wire.h"
 
 /* Persistence policy */
 #define RL_PERSIST_ENABLE                 1
@@ -51,9 +52,13 @@
  *   [11..] payload bytes
  */
 #define RADIOLINK_WIRE_V2_VERSION (0x02U)
-#define RADIOLINK_WIRE_V2_HDR_LEN (1U + 1U + 4U + 4U + 1U)
+
+/* Header length is derived from canonical v2 layout in radio_wire.h */
+#define RADIOLINK_WIRE_V2_HDR_LEN (RADIOLINK_WIRE_V2_HDR_LEN_DERIVED)
+
 #define RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN (RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN)
 #define RADIOLINK_WIRE_V2_MAX_FRAME_LEN (RADIOLINK_WIRE_V2_HDR_LEN + RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN)
+
 
 
 
