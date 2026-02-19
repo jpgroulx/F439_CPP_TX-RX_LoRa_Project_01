@@ -73,15 +73,31 @@ void RadioApp_Loop(void) {
 			char s[256];
 			bool status = false;
 
-			printf("RXHDR: %02X %02X %02X %02X %02X %02X %02X len=%u\r\n",
-			       (unsigned)r.payload[0],
-			       (unsigned)r.payload[1],
-			       (unsigned)r.payload[2],
-			       (unsigned)r.payload[3],
-			       (unsigned)r.payload[4],
-			       (unsigned)r.payload[5],
-			       (unsigned)r.payload[6],
-			       (unsigned)r.payload_len);
+			{
+			    uint8_t ver = 0U;
+			    uint8_t hdrBytes = 0U;
+
+			    if (r.payload_len >= 1U) {
+			        ver = r.payload[0];
+			    }
+
+			    /* Raw header dump (debug): print the whole header for known versions */
+			    if (ver == RADIOLINK_WIRE_V2_VERSION) {
+			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V2_HDR_LEN) ? r.payload_len : RADIOLINK_WIRE_V2_HDR_LEN);
+			    } else if (ver == RADIOLINK_WIRE_V1_VERSION) {
+			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V1_HDR_LEN) ? r.payload_len : RADIOLINK_WIRE_V1_HDR_LEN);
+			    } else {
+			        /* Unknown version: show up to 8 bytes max */
+			        hdrBytes = (uint8_t)((r.payload_len < 8U) ? r.payload_len : 8U);
+			    }
+
+			    printf("RXHDR:");
+			    for (uint8_t i = 0U; i < hdrBytes; i++) {
+			        printf(" %02X", (unsigned)r.payload[i]);
+			    }
+			    printf(" len=%u\r\n", (unsigned)r.payload_len);
+			}
+
 
 			status = RadioLink_TryDecodeToString(r.payload, r.payload_len, s, (uint8_t)(sizeof(s) - 1U));
 #ifndef RF_DEBUG

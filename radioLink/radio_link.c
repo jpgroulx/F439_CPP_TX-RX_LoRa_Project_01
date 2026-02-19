@@ -18,6 +18,19 @@ static uint32_t g_radiolink_sessionSeqId;
 static uint32_t g_radiolink_last_seen_counter[256];
 static uint8_t g_radiolink_seen[256];
 
+/* Wire v2 replay state: per-node (sessionSeqId, msgCounter) */
+static uint32_t g_radiolink_last_seen_sessionSeqId_v2[256];
+static uint32_t g_radiolink_last_seen_counter_v2[256];
+static uint8_t g_radiolink_seen_v2[256];
+
+typedef struct {
+    uint8_t nodeId;
+    uint32_t sessionSeqId;
+    uint32_t msgCounter;
+    const uint8_t *payload;
+    uint8_t payloadLen;
+} radioLinkParsedV2_t;
+
 static bool RadioLink_SessionSeqId_Store(uint32_t v) {
     bool ok;
     uint8_t buf[4];
@@ -166,6 +179,77 @@ static uint32_t RadioLink_DecodeLe32(const uint8_t in[4]) {
     return v;
 }
 
+static bool RadioLink_BuildWireV2Frame(uint8_t *frame,
+                                       uint8_t frameMax,
+                                       uint8_t nodeId,
+                                       uint32_t sessionSeqId,
+                                       uint32_t msgCounter,
+                                       const uint8_t *payload,
+                                       uint8_t payloadLen,
+                                       uint8_t *outFrameLen)
+{
+    bool ok = false;
+    uint8_t frameLen = 0U;
+
+    if (!frame || !outFrameLen || (!payload && payloadLen != 0U)) {
+        ok = false;
+    } else if (payloadLen > RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN) {
+        ok = false;
+    } else {
+        frameLen = (uint8_t)(RADIOLINK_WIRE_V2_HDR_LEN + payloadLen);
+        if (frameLen > frameMax) {
+            ok = false;
+        } else {
+            frame[RL_W2_OFF_VER] = RADIOLINK_WIRE_V2_VERSION;
+            frame[RL_W2_OFF_NODE_ID] = nodeId;
+            RadioLink_EncodeLe32(&frame[RL_W2_OFF_SESSION_LE], sessionSeqId);
+            RadioLink_EncodeLe32(&frame[RL_W2_OFF_COUNTER_LE], msgCounter);
+            frame[RL_W2_OFF_PAYLOAD_LEN] = payloadLen;
+
+            if (payloadLen != 0U) {
+                memcpy(&frame[RL_W2_OFF_PAYLOAD], payload, payloadLen);
+            }
+
+            *outFrameLen = frameLen;
+            ok = true;
+        }
+    }
+
+    return ok;
+}
+
+static bool RadioLink_ParseWireV2Frame(const uint8_t *rx,
+                                       uint8_t rxLen,
+                                       radioLinkParsedV2_t *out)
+{
+    bool ok = false;
+    uint8_t n = 0U;
+
+    if (!rx || !out) {
+        ok = false;
+    } else if (rxLen < RADIOLINK_WIRE_V2_HDR_LEN) {
+        ok = false;
+    } else if (rx[RL_W2_OFF_VER] != RADIOLINK_WIRE_V2_VERSION) {
+        ok = false;
+    } else {
+        n = rx[RL_W2_OFF_PAYLOAD_LEN];
+
+        if ((n > RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN) ||
+            ((uint8_t)(RADIOLINK_WIRE_V2_HDR_LEN + n) != rxLen)) {
+            ok = false;
+        } else {
+            out->nodeId = rx[RL_W2_OFF_NODE_ID];
+            out->sessionSeqId = RadioLink_DecodeLe32(&rx[RL_W2_OFF_SESSION_LE]);
+            out->msgCounter = RadioLink_DecodeLe32(&rx[RL_W2_OFF_COUNTER_LE]);
+            out->payloadLen = n;
+            out->payload = (n == 0U) ? NULL : &rx[RL_W2_OFF_PAYLOAD];
+            ok = true;
+        }
+    }
+
+    return ok;
+}
+
 /* Default node_id derivation: stable u8 from STM32 UID words. */
 static uint8_t RadioLink_GetNodeId(void) {
     uint8_t id = 0;
@@ -227,28 +311,77 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
         return false;
     }
 
-    /* Prefer Wire v1 when structurally valid */
-    if (rx_len >= RADIOLINK_WIRE_V1_HDR_LEN && rx[0] == RADIOLINK_WIRE_V1_VERSION) {
+    /* Prefer Wire v2 when structurally valid */
+    if (rx_len >= RADIOLINK_WIRE_V2_HDR_LEN && rx[0] == RADIOLINK_WIRE_V2_VERSION) {
         uint8_t node_id = rx[1];
-        uint32_t counter = RadioLink_DecodeLe32(&rx[2]);
-        uint8_t n = rx[6];
+        uint32_t sessionSeqId = RadioLink_DecodeLe32(&rx[2]);
+        uint32_t counter = RadioLink_DecodeLe32(&rx[6]);
+        uint8_t n = rx[10];
 
         /* Structural validation: exact frame length must be present */
-        if ((n <= RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN) && ((uint8_t)(RADIOLINK_WIRE_V1_HDR_LEN + n) == rx_len)) {
-            /* Replay protection */
-            if (g_radiolink_seen[node_id]) {
-                if (counter <= g_radiolink_last_seen_counter[node_id]) {
+        if ((n <= RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN) && ((uint8_t)(RADIOLINK_WIRE_V2_HDR_LEN + n) == rx_len)) {
+            /* Replay protection: (sessionSeqId, counter) per node_id */
+            if (g_radiolink_seen_v2[node_id]) {
+                uint32_t lastSession = g_radiolink_last_seen_sessionSeqId_v2[node_id];
+                uint32_t lastCounter = g_radiolink_last_seen_counter_v2[node_id];
+
+                if (sessionSeqId < lastSession) {
+                    return false;
+                }
+                if ((sessionSeqId == lastSession) && (counter <= lastCounter)) {
                     return false;
                 }
             }
 
-            g_radiolink_seen[node_id] = 1U;
-            g_radiolink_last_seen_counter[node_id] = counter;
+            g_radiolink_seen_v2[node_id] = 1U;
+            g_radiolink_last_seen_sessionSeqId_v2[node_id] = sessionSeqId;
+            g_radiolink_last_seen_counter_v2[node_id] = counter;
 
-            payload = &rx[RADIOLINK_WIRE_V1_HDR_LEN];
+            payload = &rx[RADIOLINK_WIRE_V2_HDR_LEN];
             payload_len = n;
         }
     }
+
+
+    /* ============================================================
+     * LEGACY_WIRE_SUPPORT (V0/V1)
+     * ------------------------------------------------------------
+     * Historical development support for early radio bring-up.
+     *
+     * TX no longer emits V0/V1 frames (Wire v2 only).
+     * RX retains legacy parsing temporarily for rollback safety.
+     *
+     * TODO:
+     *   Remove this entire section once project is fully stabilized
+     *   and legacy compatibility is no longer required.
+     *
+     * Search tag: LEGACY_WIRE_SUPPORT
+     * ============================================================ */
+
+    /* Fallback: Wire v1 when structurally valid */
+    if (!payload) {
+        if (rx_len >= RADIOLINK_WIRE_V1_HDR_LEN && rx[0] == RADIOLINK_WIRE_V1_VERSION) {
+            uint8_t node_id = rx[1];
+            uint32_t counter = RadioLink_DecodeLe32(&rx[2]);
+            uint8_t n = rx[6];
+
+            if ((n <= RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN) &&
+                ((uint8_t)(RADIOLINK_WIRE_V1_HDR_LEN + n) == rx_len)) {
+
+                if (g_radiolink_seen[node_id]) {
+                    if (counter <= g_radiolink_last_seen_counter[node_id]) {
+                        return false;
+                    }
+                }
+                g_radiolink_seen[node_id] = 1U;
+                g_radiolink_last_seen_counter[node_id] = counter;
+
+                payload = &rx[RADIOLINK_WIRE_V1_HDR_LEN];
+                payload_len = n;
+            }
+        }
+    }
+
 
     /* Fallback: Wire v0 */
     if (!payload) {
@@ -283,7 +416,7 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
 
 bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
     bool status = false;
-    uint8_t frame[RADIOLINK_WIRE_V1_MAX_FRAME_LEN];
+    uint8_t frame[RADIOLINK_WIRE_V2_MAX_FRAME_LEN];
     uint8_t node_id;
     uint32_t counter;
     uint8_t frame_len;
@@ -340,16 +473,24 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
 
     printf("RL: TX ctr=%lu\r\n", (unsigned long)counter);
 
-    frame[0] = RADIOLINK_WIRE_V1_VERSION;
-    frame[1] = node_id;
-    RadioLink_EncodeLe32(&frame[2], counter);
-    frame[6] = len;
+    uint8_t frameLen = 0U;
+    bool ok = false;
 
-    memcpy(&frame[RADIOLINK_WIRE_V1_HDR_LEN], buf, len);
+    ok = RadioLink_BuildWireV2Frame(frame,
+                                   (uint8_t)sizeof(frame),
+                                   node_id,
+                                   g_radiolink_sessionSeqId,
+                                   counter,
+                                   buf,
+                                   len,
+                                   &frameLen);
 
-    frame_len = (uint8_t)(RADIOLINK_WIRE_V1_HDR_LEN + len);
+    if (!ok) {
+        status = false;
+    } else {
+        status = SX1262_SendBytes(sx, frame, frameLen);
+    }
 
-    status = SX1262_SendBytes(sx, frame, frame_len);
     if (status) {
         if (RadioLink_PersistAllowed()) {
             g_radiolink_tx_counter = counter + 1U;
