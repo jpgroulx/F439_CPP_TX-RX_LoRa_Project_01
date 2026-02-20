@@ -124,7 +124,7 @@ void RadioApp_Loop(void) {
 #endif
 
 			last_send_ms = now;
-			sprintf(msg, "Hello World!!! %lu", (unsigned long)counter++);
+			sprintf(msg, "The quick brown fox jumps over the lazy dog %lu", (unsigned long)counter++);
 
 #ifdef RF_DEBUG
 			printf("[%lu] TX start request\r\n", (unsigned long)t0);

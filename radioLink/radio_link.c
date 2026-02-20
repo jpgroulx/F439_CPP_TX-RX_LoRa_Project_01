@@ -23,29 +23,81 @@ static uint32_t g_radiolink_last_seen_sessionSeqId_v2[256];
 static uint32_t g_radiolink_last_seen_counter_v2[256];
 static uint8_t g_radiolink_seen_v2[256];
 
-typedef struct radioLinkParsedV2_t{
-    uint8_t nodeId;
-    uint32_t sessionSeqId;
-    uint32_t msgCounter;
-    const uint8_t *payload;
-    uint8_t payloadLen;
-} radioLinkParsedV2_t;
-
-// === RADIOLINK_CRYPTO_CONTEXT (placeholders; unused for now) ===
-typedef struct radioLinkCryptoCtx_t {
-    uint8_t masterKey[16];
-    uint8_t encKey[16];
-    uint8_t macKey[16];
-    uint8_t keyIsValid;   // 0/1
-} radioLinkCryptoCtx_t;
-
 static radioLinkCryptoCtx_t gRlCryptoCtx;
 
 static const uint8_t gRadioLinkMasterKey_Default[16] = {
     0x00u, 0x01u, 0x02u, 0x03u, 0x04u, 0x05u, 0x06u, 0x07u,
     0x08u, 0x09u, 0x0Au, 0x0Bu, 0x0Cu, 0x0Du, 0x0Eu, 0x0Fu
 };
+
+
+static void radioLinkDeriveKeys_Stub(radioLinkCryptoCtx_t *ctx, uint8_t nodeId);
+// === RADIOLINK_CRYPTO_LAZY_INIT (AES-CTR only; CMAC later) ===
+static uint8_t gRlCryptoInitDone = 0u;
+
+static void radioLinkCryptoEnsureInit(uint8_t nodeId)
+{
+    if (gRlCryptoInitDone != 0u) {
+        return;
+    }
+
+    memcpy(gRlCryptoCtx.masterKey, gRadioLinkMasterKey_Default, sizeof(gRlCryptoCtx.masterKey));
+    radioLinkDeriveKeys_Stub(&gRlCryptoCtx, nodeId);
+
+    gRlCryptoInitDone = 1u;
+}
+// === END RADIOLINK_CRYPTO_LAZY_INIT ===
 // === END RADIOLINK_CRYPTO_CONTEXT ===
+
+
+// === RADIOLINK_AES_CTR_HELPER (unused for now) ===
+// NOTE: This is a placeholder skeleton. It does NOT yet configure CRYP
+// for AES-CTR mode. That will be done in a separate task.
+
+extern CRYP_HandleTypeDef hcryp;
+
+static bool radioLinkAesCtrXor_Stub(uint8_t *data,
+                                    uint32_t len,
+                                    const uint8_t key[16],
+                                    const uint8_t nonce[16])
+{
+    HAL_StatusTypeDef status;
+
+    if ((data == NULL) || (key == NULL) || (nonce == NULL) || (len == 0u)) {
+        return false;
+    }
+
+    /* CRYP driver expects key/IV pointers via init struct (CubeMX style) */
+    hcryp.Init.pKey = (uint32_t *)key;
+    hcryp.Init.pInitVect = (uint32_t *)nonce;
+
+    status = HAL_CRYP_Init(&hcryp);
+    if (status != HAL_OK) {
+        return false;
+    }
+
+    /*
+     * AES-CTR is symmetric: "encrypt" produces keystream XOR.
+     * Use Encrypt for both encrypt/decrypt.
+     *
+     * HAL_CRYP_Encrypt length unit follows DataWidthUnit.
+     * Your IOC sets DataWidthUnit=BYTE, so Nothing to do.
+     */
+
+    status = HAL_CRYP_Encrypt(&hcryp,
+                              (uint32_t *)data,
+                              len,
+                              (uint32_t *)data,
+                              HAL_MAX_DELAY);
+
+    if (status != HAL_OK) {
+        return false;
+    }
+
+    return true;
+}
+// === END RADIOLINK_AES_CTR_HELPER ===
+
 
 // === RADIOLINK_KEY_DERIVATION_STUB (unused for now) ===
 static void radioLinkDeriveKeys_Stub(radioLinkCryptoCtx_t *ctx, uint8_t nodeId)
@@ -254,38 +306,6 @@ static bool RadioLink_BuildWireV2Frame(uint8_t *frame,
     return ok;
 }
 
-static bool RadioLink_ParseWireV2Frame(const uint8_t *rx,
-                                       uint8_t rxLen,
-                                       radioLinkParsedV2_t *out)
-{
-    bool ok = false;
-    uint8_t n = 0U;
-
-    if (!rx || !out) {
-        ok = false;
-    } else if (rxLen < RADIOLINK_WIRE_V2_HDR_LEN) {
-        ok = false;
-    } else if (rx[RL_W2_OFF_VER] != RADIOLINK_WIRE_V2_VERSION) {
-        ok = false;
-    } else {
-        n = rx[RL_W2_OFF_PAYLOAD_LEN];
-
-        if ((n > RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN) ||
-            ((uint8_t)(RADIOLINK_WIRE_V2_HDR_LEN + n) != rxLen)) {
-            ok = false;
-        } else {
-            out->nodeId = rx[RL_W2_OFF_NODE_ID];
-            out->sessionSeqId = RadioLink_DecodeLe32(&rx[RL_W2_OFF_SESSION_LE]);
-            out->msgCounter = RadioLink_DecodeLe32(&rx[RL_W2_OFF_COUNTER_LE]);
-            out->payloadLen = n;
-            out->payload = (n == 0U) ? NULL : &rx[RL_W2_OFF_PAYLOAD];
-            ok = true;
-        }
-    }
-
-    return ok;
-}
-
 /* Default node_id derivation: stable u8 from STM32 UID words. */
 static uint8_t RadioLink_GetNodeId(void) {
     uint8_t id = 0;
@@ -310,42 +330,131 @@ static uint8_t RadioLink_GetNodeId(void) {
 }
 
 // === WIRE_V3_CRYPTO_STUBS (no behavior change) ===
-// NOTE: These are placeholders only. They do NOT encrypt or authenticate yet.
-//       They exist to stabilize the API surface before wiring behavior changes.
 
-bool RadioLink_BuildWireV3Frame_Stub(const uint8_t *plain, uint8_t plainLen,
-                                    uint8_t *out, uint8_t outMax,
-                                    uint8_t *outLen)
+bool RadioLink_BuildWireV3Frame_Stub(uint8_t *out, uint8_t outMax,
+                                     uint8_t nodeId,
+                                     uint32_t sessionSeqId,
+                                     uint32_t msgCounter,
+                                     const uint8_t *plain, uint8_t plainLen,
+                                     uint8_t *outLen)
 {
-    (void)plain;
-    (void)plainLen;
-    (void)out;
-    (void)outMax;
+    uint32_t totalLen;
+    uint8_t nonce[16];
 
-    if (outLen == NULL) {
+    if ((out == NULL) || (outLen == NULL) || (plain == NULL)) {
         return false;
     }
 
-    *outLen = 0;
-    return false;
+    radioLinkCryptoEnsureInit(nodeId);
+
+    totalLen = (uint32_t)RADIOLINK_WIRE_V3_HDR_LEN_DERIVED +
+               (uint32_t)plainLen +
+               (uint32_t)RADIOLINK_WIRE_V3_TAG_LEN;
+
+    if (totalLen > (uint32_t)outMax) {
+        return false;
+    }
+
+    out[RL_W3_OFF_VERSION] = RADIOLINK_WIRE_V3_VERSION;
+    out[RL_W3_OFF_NODE_ID] = nodeId;
+    RadioLink_EncodeLe32(&out[RL_W3_OFF_SESSION_SEQ_ID], sessionSeqId);
+    RadioLink_EncodeLe32(&out[RL_W3_OFF_MSG_COUNTER], msgCounter);
+    out[RL_W3_OFF_PAYLOAD_LEN] = plainLen;
+
+    if (plainLen > 0u) {
+        memcpy(&out[RL_W3_OFF_PAYLOAD], plain, plainLen);
+    }
+
+    memset(nonce, 0, sizeof(nonce));
+    RadioLink_EncodeLe32(&nonce[0], sessionSeqId);
+    RadioLink_EncodeLe32(&nonce[4], msgCounter);
+
+    if (plainLen > 0u) {
+        if (!radioLinkAesCtrXor_Stub(&out[RL_W3_OFF_PAYLOAD],
+                                     (uint32_t)plainLen,
+                                     gRlCryptoCtx.encKey,
+                                     nonce)) {
+            return false;
+        }
+    }
+
+    /* Placeholder tag (CMAC later) */
+    memset(&out[RL_W3_OFF_PAYLOAD + plainLen], 0, RADIOLINK_WIRE_V3_TAG_LEN);
+
+    *outLen = (uint8_t)totalLen;
+    return true;
 }
 
 bool RadioLink_ParseWireV3Frame_Stub(const uint8_t *rx, uint8_t rxLen,
-                                    uint8_t *outPlain, uint8_t outPlainMax,
-                                    uint8_t *outPlainLen)
+                                     uint8_t *outPlain, uint8_t outPlainMax,
+                                     uint8_t *outPlainLen)
 {
-    (void)rx;
-    (void)rxLen;
-    (void)outPlain;
-    (void)outPlainMax;
+    uint8_t nodeId;
+    uint32_t sessionSeqId;
+    uint32_t msgCounter;
+    uint8_t payloadLen;
+    uint32_t expectedLen;
+    uint8_t nonce[16];
 
-    if (outPlainLen == NULL) {
+    if ((rx == NULL) || (outPlain == NULL) || (outPlainLen == NULL)) {
         return false;
     }
 
-    *outPlainLen = 0;
-    return false;
+    if (rxLen < (uint8_t)(RADIOLINK_WIRE_V3_HDR_LEN_DERIVED + RADIOLINK_WIRE_V3_TAG_LEN)) {
+        return false;
+    }
+
+    if (rx[RL_W3_OFF_VERSION] != RADIOLINK_WIRE_V3_VERSION) {
+        return false;
+    }
+
+    nodeId = rx[RL_W3_OFF_NODE_ID];
+    radioLinkCryptoEnsureInit(nodeId);
+
+    sessionSeqId = RadioLink_DecodeLe32(&rx[RL_W3_OFF_SESSION_SEQ_ID]);
+    msgCounter = RadioLink_DecodeLe32(&rx[RL_W3_OFF_MSG_COUNTER]);
+    payloadLen = rx[RL_W3_OFF_PAYLOAD_LEN];
+
+    expectedLen = (uint32_t)RADIOLINK_WIRE_V3_HDR_LEN_DERIVED +
+                  (uint32_t)payloadLen +
+                  (uint32_t)RADIOLINK_WIRE_V3_TAG_LEN;
+
+    if (expectedLen != (uint32_t)rxLen) {
+        return false;
+    }
+
+    if (payloadLen > outPlainMax) {
+        return false;
+    }
+
+    /* Placeholder tag check: require all zeros (CMAC later) */
+    for (uint32_t i = 0u; i < (uint32_t)RADIOLINK_WIRE_V3_TAG_LEN; i++) {
+        if (rx[RL_W3_OFF_PAYLOAD + payloadLen + i] != 0u) {
+            return false;
+        }
+    }
+
+    if (payloadLen > 0u) {
+        memcpy(outPlain, &rx[RL_W3_OFF_PAYLOAD], payloadLen);
+    }
+
+    memset(nonce, 0, sizeof(nonce));
+    RadioLink_EncodeLe32(&nonce[0], sessionSeqId);
+    RadioLink_EncodeLe32(&nonce[4], msgCounter);
+
+    if (payloadLen > 0u) {
+        if (!radioLinkAesCtrXor_Stub(outPlain,
+                                     (uint32_t)payloadLen,
+                                     gRlCryptoCtx.encKey,
+                                     nonce)) {
+            return false;
+        }
+    }
+
+    *outPlainLen = payloadLen;
+    return true;
 }
+
 // === END WIRE_V3_CRYPTO_STUBS ===
 
 uint8_t RadioLink_WireV0_FrameLenFromPayloadLen(uint8_t payload_len) {
@@ -386,6 +495,9 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
         return false;
     }
 
+    // === WIRE_VERSION_SELECT_RX (compile-time; no behavior change yet) ===
+    #if (RADIOLINK_CRYPTO_ENABLE == 0)
+
     /* Prefer Wire v2 when structurally valid */
     if (rx_len >= RADIOLINK_WIRE_V2_HDR_LEN && rx[0] == RADIOLINK_WIRE_V2_VERSION) {
         uint8_t node_id = rx[1];
@@ -417,6 +529,57 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
         }
     }
 
+    #else
+
+    // Crypto-enabled build will switch to Wire v3 later.
+    // For now, keep Wire v2 to avoid behavior change until crypto is implemented.
+
+    // === WIRE_V3_ATTEMPT_RX (stub; expected to fail for now) ===
+    {
+        uint8_t plainLen = 0u;
+
+        if (RadioLink_ParseWireV3Frame_Stub(rx, rx_len,
+                                           (uint8_t *)out, (uint8_t)(out_max - 1u),
+                                           &plainLen)) {
+            out[plainLen] = '\0';
+            return true;
+        }
+    }
+    // === END WIRE_V3_ATTEMPT_RX ===
+
+    /* Prefer Wire v2 when structurally valid */
+    if (rx_len >= RADIOLINK_WIRE_V2_HDR_LEN && rx[0] == RADIOLINK_WIRE_V2_VERSION) {
+        uint8_t node_id = rx[1];
+        uint32_t sessionSeqId = RadioLink_DecodeLe32(&rx[2]);
+        uint32_t counter = RadioLink_DecodeLe32(&rx[6]);
+        uint8_t n = rx[10];
+
+        /* Structural validation: exact frame length must be present */
+        if ((n <= RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN) && ((uint8_t)(RADIOLINK_WIRE_V2_HDR_LEN + n) == rx_len)) {
+            /* Replay protection: (sessionSeqId, counter) per node_id */
+            if (g_radiolink_seen_v2[node_id]) {
+                uint32_t lastSession = g_radiolink_last_seen_sessionSeqId_v2[node_id];
+                uint32_t lastCounter = g_radiolink_last_seen_counter_v2[node_id];
+
+                if (sessionSeqId < lastSession) {
+                    return false;
+                }
+                if ((sessionSeqId == lastSession) && (counter <= lastCounter)) {
+                    return false;
+                }
+            }
+
+            g_radiolink_seen_v2[node_id] = 1U;
+            g_radiolink_last_seen_sessionSeqId_v2[node_id] = sessionSeqId;
+            g_radiolink_last_seen_counter_v2[node_id] = counter;
+
+            payload = &rx[RADIOLINK_WIRE_V2_HDR_LEN];
+            payload_len = n;
+        }
+    }
+
+    #endif
+    // === END WIRE_VERSION_SELECT_RX ===
 
     /* ============================================================
      * LEGACY_WIRE_SUPPORT (V0/V1)
@@ -494,7 +657,6 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
     uint8_t frame[RADIOLINK_WIRE_V2_MAX_FRAME_LEN];
     uint8_t node_id;
     uint32_t counter;
-    uint8_t frame_len;
 
     if (!sx || !buf || (len == 0U)) {
         return false;
@@ -561,18 +723,31 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
                                        buf,
                                        len,
                                        &frameLen);
-    #else
-        // Crypto-enabled build will switch to Wire v3 later.
-        // For now, keep Wire v2 to avoid behavior change until crypto is implemented.
-        ok = RadioLink_BuildWireV2Frame(frame,
-                                       (uint8_t)sizeof(frame),
-                                       node_id,
-                                       g_radiolink_sessionSeqId,
-                                       counter,
-                                       buf,
-                                       len,
-                                       &frameLen);
-    #endif
+#else
+// Crypto-enabled build will switch to Wire v3 later.
+// For now, v3 builder is stubbed and expected to fail, so we fall back to Wire v2.
+
+// === WIRE_V3_ATTEMPT_TX (stub; expected to fail for now) ===
+        ok = RadioLink_BuildWireV3Frame_Stub(frame, (uint8_t)sizeof(frame),
+                                             node_id,
+                                             g_radiolink_sessionSeqId,
+                                             counter,
+                                             buf, len,
+                                             &frameLen);
+// === END WIRE_V3_ATTEMPT_TX ===
+
+        if (!ok) {
+        	ok = RadioLink_BuildWireV2Frame(frame,
+                                   (uint8_t)sizeof(frame),
+                                   node_id,
+                                   g_radiolink_sessionSeqId,
+                                   counter,
+                                   buf,
+                                   len,
+                                   &frameLen);
+        }
+
+#endif
     // === END WIRE_VERSION_SELECT_TX ===
 
     if (!ok) {

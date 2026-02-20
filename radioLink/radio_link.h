@@ -71,20 +71,40 @@
 #define RADIOLINK_W3_TAG_LEN                 (RADIOLINK_WIRE_V3_TAG_LEN)
 // === END WIRE_V3_CRYPTO_CONSTANTS ===
 
+typedef struct radioLinkParsedV2_t{
+    uint8_t nodeId;
+    uint32_t sessionSeqId;
+    uint32_t msgCounter;
+    const uint8_t *payload;
+    uint8_t payloadLen;
+} radioLinkParsedV2_t;
+
+// === RADIOLINK_CRYPTO_CONTEXT (placeholders; unused for now) ===
+typedef struct radioLinkCryptoCtx_t {
+    uint8_t masterKey[16];
+    uint8_t encKey[16];
+    uint8_t macKey[16];
+    uint8_t keyIsValid;   // 0/1
+} radioLinkCryptoCtx_t;
+
 
 bool RadioLink_SendString(SX1262_Handle *sx, const char *s);
 bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, uint8_t out_max);
 uint8_t RadioLink_WireV0_FrameLenFromPayloadLen(uint8_t payload_len);
 bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len);
 
-
-// === WIRE_V3_CRYPTO_STUBS (no behavior change) ===
-bool RadioLink_BuildWireV3Frame_Stub(const uint8_t *plain, uint8_t plainLen,
-                                    uint8_t *out, uint8_t outMax,
-                                    uint8_t *outLen);
+// === WIRE_V3_CRYPTO_STUBS (no behavior change marker; now becomes real AES-CTR) ===
+bool RadioLink_BuildWireV3Frame_Stub(uint8_t *out, uint8_t outMax,
+                                     uint8_t nodeId,
+                                     uint32_t sessionSeqId,
+                                     uint32_t msgCounter,
+                                     const uint8_t *plain, uint8_t plainLen,
+                                     uint8_t *outLen);
 
 bool RadioLink_ParseWireV3Frame_Stub(const uint8_t *rx, uint8_t rxLen,
-                                    uint8_t *outPlain, uint8_t outPlainMax,
-                                    uint8_t *outPlainLen);
+                                     uint8_t *outPlain, uint8_t outPlainMax,
+                                     uint8_t *outPlainLen);
+
 // === END WIRE_V3_CRYPTO_STUBS ===
+
 #endif /* RADIO_LINK_H_ */
