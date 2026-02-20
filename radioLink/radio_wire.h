@@ -85,4 +85,32 @@ typedef struct {
 
 _Static_assert(RADIOLINK_WIRE_V2_HDR_LEN_DERIVED == 11U, "Wire v2 header length must be 11 bytes");
 
+// === WIRE_V3_CRYPTO_LAYOUT (Wire v3: AES-CTR + CMAC; fixed tag) ===
+// NOTE: This struct exists ONLY to derive offsetof() layout macros.
+//       It must not be used for memcpy/casting due to alignment/packing risks.
+
+#define RADIOLINK_WIRE_V3_VERSION                (0x03u)
+#define RADIOLINK_WIRE_V3_TAG_LEN                (16u)
+
+typedef struct __attribute__((packed)) radioWireV3_t {
+    uint8_t  version;         // 0x03
+    uint8_t  nodeId;
+    uint32_t sessionSeqId_le;  // LE32 on wire
+    uint32_t msgCounter_le;    // LE32 on wire
+    uint8_t  payloadLen;       // ciphertext length (bytes)
+    uint8_t  payload[1];       // ciphertext starts here (variable), followed by tag
+} radioWireV3_t;
+
+#define RL_W3_OFF_VERSION                        (offsetof(radioWireV3_t, version))
+#define RL_W3_OFF_NODE_ID                        (offsetof(radioWireV3_t, nodeId))
+#define RL_W3_OFF_SESSION_SEQ_ID                 (offsetof(radioWireV3_t, sessionSeqId_le))
+#define RL_W3_OFF_MSG_COUNTER                    (offsetof(radioWireV3_t, msgCounter_le))
+#define RL_W3_OFF_PAYLOAD_LEN                    (offsetof(radioWireV3_t, payloadLen))
+#define RL_W3_OFF_PAYLOAD                        (offsetof(radioWireV3_t, payload))
+
+#define RADIOLINK_WIRE_V3_HDR_LEN_DERIVED        (offsetof(radioWireV3_t, payload))
+
+_Static_assert(RADIOLINK_WIRE_V3_HDR_LEN_DERIVED == 11u, "Wire v3 header length must be 11 bytes");
+// === END WIRE_V3_CRYPTO_LAYOUT ===
+
 #endif /* RADIO_WIRE_H_ */

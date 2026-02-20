@@ -2,6 +2,10 @@
 CAD.formats=
 CAD.pinconfig=
 CAD.provider=
+CRYP.Algorithm=CRYP_AES_CTR
+CRYP.DataType=CRYP_DATATYPE_32B
+CRYP.DataWidthUnit=CRYP_DATAWIDTHUNIT_BYTE
+CRYP.IPParameters=Algorithm,DataType,DataWidthUnit
 File.Version=6
 GPIO.groupedBy=Group By Peripherals
 KeepUserPlacement=false

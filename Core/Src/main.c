@@ -46,8 +46,10 @@
 
 /* Private variables ---------------------------------------------------------*/
 CRYP_HandleTypeDef hcryp;
-__ALIGN_BEGIN static const uint32_t pKeyCRYP[6] __ALIGN_END = {
-                            0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000};
+__ALIGN_BEGIN static const uint32_t pKeyCRYP[4] __ALIGN_END = {
+                            0x00000000,0x00000000,0x00000000,0x00000000};
+__ALIGN_BEGIN static const uint32_t pInitVectCRYP[4] __ALIGN_END = {
+                            0x00000000,0x00000000,0x00000000,0x00000000};
 
 SPI_HandleTypeDef hspi1;
 
@@ -313,9 +315,11 @@ static void MX_CRYP_Init(void)
   /* USER CODE END CRYP_Init 1 */
   hcryp.Instance = CRYP;
   hcryp.Init.DataType = CRYP_DATATYPE_32B;
+  hcryp.Init.KeySize = CRYP_KEYSIZE_128B;
   hcryp.Init.pKey = (uint32_t *)pKeyCRYP;
-  hcryp.Init.Algorithm = CRYP_TDES_ECB;
-  hcryp.Init.DataWidthUnit = CRYP_DATAWIDTHUNIT_WORD;
+  hcryp.Init.pInitVect = (uint32_t *)pInitVectCRYP;
+  hcryp.Init.Algorithm = CRYP_AES_CTR;
+  hcryp.Init.DataWidthUnit = CRYP_DATAWIDTHUNIT_BYTE;
   if (HAL_CRYP_Init(&hcryp) != HAL_OK)
   {
     Error_Handler();
