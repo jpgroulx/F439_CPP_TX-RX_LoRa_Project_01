@@ -693,6 +693,10 @@ bool RadioLink_SendString(SX1262_Handle *sx, const char *s) {
 
     len = strlen(s);
     if (len > RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN) {
+        printf("RL: TX string too long: %lu > %u (truncating; v3 max=%u)\r\n",
+               (unsigned long)len,
+               (unsigned)RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN,
+               (unsigned)RADIOLINK_WIRE_V3_MAX_PLAINTEXT_LEN);
         len = RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN;
     }
 
@@ -881,6 +885,10 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
     }
 
     if (len > RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN) {
+        printf("RL: TX buf too long: %u > %u (truncating; v3 max=%u)\r\n",
+               (unsigned)len,
+               (unsigned)RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN,
+               (unsigned)RADIOLINK_WIRE_V3_MAX_PLAINTEXT_LEN);
         len = RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN;
     }
 
