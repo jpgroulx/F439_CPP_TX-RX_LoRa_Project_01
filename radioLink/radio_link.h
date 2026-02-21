@@ -20,6 +20,10 @@
 #ifndef RADIOLINK_CRYPTO_ENABLE
 #define RADIOLINK_CRYPTO_ENABLE    (1)
 #endif
+
+
+#define RADIOLINK_DEBUG_TAMPER_ENABLE 0
+
 // === END RADIOLINK_CRYPTO_ENABLE ===
 
 /* Persistence policy */

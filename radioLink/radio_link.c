@@ -63,6 +63,17 @@ static void radioLinkCryptoEnsureInit(uint8_t nodeId)
 
 extern CRYP_HandleTypeDef hcryp;
 
+// === RADIOLINK_AES_ECB_CMAC_HELPERS (unused for now) ===
+static bool radioLinkAesEcbEncryptBlock_Stub(const uint8_t key[16],
+                                            const uint8_t inBlock[16],
+                                            uint8_t outBlock[16]) __attribute__((unused));
+
+static void radioLinkAesCmac128_Stub(const uint8_t key[16],
+                                     const uint8_t *msg,
+                                     uint32_t msgLen,
+                                     uint8_t outTag[16]) __attribute__((unused));
+// === END RADIOLINK_AES_ECB_CMAC_HELPERS ===
+
 static bool radioLinkAesCtrXor_Stub(uint8_t *data,
                                     uint32_t len,
                                     const uint8_t key[16],
@@ -105,6 +116,174 @@ static bool radioLinkAesCtrXor_Stub(uint8_t *data,
 }
 // === END RADIOLINK_AES_CTR_HELPER ===
 
+// === RADIOLINK_AES_ECB_ENCRYPT_BLOCK (unused for now) ===
+static bool radioLinkAesEcbEncryptBlock_Stub(const uint8_t key[16],
+                                            const uint8_t inBlock[16],
+                                            uint8_t outBlock[16])
+{
+    HAL_StatusTypeDef status;
+    uint32_t savedAlg;
+    uint32_t *savedKey;
+    uint32_t *savedIv;
+
+    if ((key == NULL) || (inBlock == NULL) || (outBlock == NULL)) {
+        return false;
+    }
+
+    /* Save/restore CRYP init fields (IOC config is AES-CTR). */
+    savedAlg = hcryp.Init.Algorithm;
+    savedKey = hcryp.Init.pKey;
+    savedIv = hcryp.Init.pInitVect;
+
+    hcryp.Init.Algorithm = CRYP_AES_ECB;
+    hcryp.Init.pKey = (uint32_t *)key;
+    hcryp.Init.pInitVect = NULL;
+
+    status = HAL_CRYP_Init(&hcryp);
+    if (status != HAL_OK) {
+        hcryp.Init.Algorithm = savedAlg;
+        hcryp.Init.pKey = savedKey;
+        hcryp.Init.pInitVect = savedIv;
+        (void)HAL_CRYP_Init(&hcryp);
+        return false;
+    }
+
+    /* One 16-byte block. DataWidthUnit is BYTE in IOC. */
+    status = HAL_CRYP_Encrypt(&hcryp,
+                             (uint32_t *)inBlock,
+                             16u,
+                             (uint32_t *)outBlock,
+                             HAL_MAX_DELAY);
+
+    /* Restore AES-CTR (or whatever IOC set). */
+    hcryp.Init.Algorithm = savedAlg;
+    hcryp.Init.pKey = savedKey;
+    hcryp.Init.pInitVect = savedIv;
+    (void)HAL_CRYP_Init(&hcryp);
+
+    return (status == HAL_OK);
+}
+// === END RADIOLINK_AES_ECB_ENCRYPT_BLOCK ===
+
+// === RADIOLINK_CT_COMPARE (CMAC tag) ===
+static bool radioLinkConstTimeEq16(const uint8_t a[16], const uint8_t b[16])
+{
+    uint8_t diff = 0u;
+
+    for (uint32_t i = 0u; i < 16u; i++) {
+        diff |= (uint8_t)(a[i] ^ b[i]);
+    }
+
+    return (diff == 0u);
+}
+// === END RADIOLINK_CT_COMPARE ===
+
+// === RADIOLINK_AES_CMAC_128 (unused for now) ===
+static void radioLinkCmacLeftShiftOne(uint8_t out[16], const uint8_t in[16])
+{
+    uint8_t carry = 0u;
+
+    for (int i = 15; i >= 0; i--) {
+        uint8_t newCarry = (uint8_t)((in[i] & 0x80u) ? 1u : 0u);
+        out[i] = (uint8_t)((in[i] << 1) | carry);
+        carry = newCarry;
+    }
+}
+
+static void radioLinkAesCmacSubkeys(const uint8_t key[16], uint8_t k1[16], uint8_t k2[16])
+{
+    /* CMAC Rb for 128-bit block size */
+    const uint8_t Rb = 0x87u;
+    uint8_t zero[16];
+    uint8_t L[16];
+
+    memset(zero, 0, sizeof(zero));
+    memset(L, 0, sizeof(L));
+    (void)radioLinkAesEcbEncryptBlock_Stub(key, zero, L);
+
+    radioLinkCmacLeftShiftOne(k1, L);
+    if ((L[0] & 0x80u) != 0u) {
+        k1[15] ^= Rb;
+    }
+
+    radioLinkCmacLeftShiftOne(k2, k1);
+    if ((k1[0] & 0x80u) != 0u) {
+        k2[15] ^= Rb;
+    }
+}
+
+static void radioLinkAesCmac128_Stub(const uint8_t key[16],
+                                     const uint8_t *msg,
+                                     uint32_t msgLen,
+                                     uint8_t outTag[16])
+{
+    uint8_t k1[16];
+    uint8_t k2[16];
+    uint8_t X[16];
+    uint8_t Mlast[16];
+    uint8_t Y[16];
+    uint32_t n;
+    bool lastComplete;
+
+    if ((key == NULL) || (outTag == NULL)) {
+        return;
+    }
+
+    /* CMAC allows msgLen=0 */
+    radioLinkAesCmacSubkeys(key, k1, k2);
+
+    n = (msgLen + 15u) / 16u;
+    if (n == 0u) {
+        n = 1u;
+    }
+
+    lastComplete = ((msgLen != 0u) && ((msgLen % 16u) == 0u));
+
+    memset(X, 0, sizeof(X));
+    memset(Mlast, 0, sizeof(Mlast));
+
+    if (lastComplete) {
+        const uint8_t *last = &msg[16u * (n - 1u)];
+        for (uint32_t i = 0u; i < 16u; i++) {
+            Mlast[i] = (uint8_t)(last[i] ^ k1[i]);
+        }
+    } else {
+        uint32_t lastLen = (msgLen % 16u);
+        if (msgLen == 0u) {
+            lastLen = 0u;
+        }
+
+        if ((msg != NULL) && (msgLen != 0u)) {
+            const uint8_t *last = &msg[16u * (n - 1u)];
+            if (lastLen != 0u) {
+                memcpy(Mlast, last, lastLen);
+            }
+        }
+
+        /* Padding: 0x80 then zeros */
+        Mlast[lastLen] = 0x80u;
+
+        for (uint32_t i = 0u; i < 16u; i++) {
+            Mlast[i] = (uint8_t)(Mlast[i] ^ k2[i]);
+        }
+    }
+
+    /* CBC-MAC over blocks 1..n-1 */
+    for (uint32_t block = 0u; block < (n - 1u); block++) {
+        const uint8_t *Mi = &msg[16u * block];
+        for (uint32_t i = 0u; i < 16u; i++) {
+            Y[i] = (uint8_t)(X[i] ^ Mi[i]);
+        }
+        (void)radioLinkAesEcbEncryptBlock_Stub(key, Y, X);
+    }
+
+    /* Final block */
+    for (uint32_t i = 0u; i < 16u; i++) {
+        Y[i] = (uint8_t)(X[i] ^ Mlast[i]);
+    }
+    (void)radioLinkAesEcbEncryptBlock_Stub(key, Y, outTag);
+}
+// === END RADIOLINK_AES_CMAC_128 ===
 
 // === RADIOLINK_KEY_DERIVATION_STUB (unused for now) ===
 static void radioLinkDeriveKeys_Stub(radioLinkCryptoCtx_t *ctx, uint8_t nodeId)
@@ -385,8 +564,18 @@ bool RadioLink_BuildWireV3Frame_Stub(uint8_t *out, uint8_t outMax,
         }
     }
 
-    /* Placeholder tag (CMAC later) */
-    memset(&out[RL_W3_OFF_PAYLOAD + plainLen], 0, RADIOLINK_WIRE_V3_TAG_LEN);
+    /* CMAC over header||ciphertext (tag excluded) */
+    {
+        uint32_t macLen;
+
+        macLen = (uint32_t)RADIOLINK_WIRE_V3_HDR_LEN_DERIVED + (uint32_t)plainLen;
+
+        /* Write tag directly into the frame's tag field */
+        radioLinkAesCmac128_Stub(gRlCryptoCtx.macKey,
+                                 out,
+                                 macLen,
+                                 &out[RL_W3_OFF_PAYLOAD + plainLen]);
+    }
 
     *outLen = (uint8_t)totalLen;
     return true;
@@ -439,9 +628,36 @@ bool RadioLink_ParseWireV3Frame_Stub(const uint8_t *rx, uint8_t rxLen,
         return false;
     }
 
-    /* Placeholder tag check: require all zeros (CMAC later) */
-    for (uint32_t i = 0u; i < (uint32_t)RADIOLINK_WIRE_V3_TAG_LEN; i++) {
-        if (rx[RL_W3_OFF_PAYLOAD + payloadLen + i] != 0u) {
+    /* CMAC verify over header||ciphertext (tag excluded) */
+    {
+        uint8_t expectedTag[16];
+        uint32_t macLen;
+        const uint8_t *rxTag;
+
+#if (RADIOLINK_DEBUG_TAMPER_ENABLE == 1)
+    /* Debug tamper: compute CMAC over a modified copy (rx is const).
+     * Use static storage to avoid stack usage. */
+    static uint8_t macBuf[RADIOLINK_WIRE_V3_HDR_LEN_DERIVED + 255u];
+#endif
+
+        macLen = (uint32_t)RADIOLINK_WIRE_V3_HDR_LEN_DERIVED + (uint32_t)payloadLen;
+        rxTag = &rx[RL_W3_OFF_PAYLOAD + payloadLen];
+
+    #if (RADIOLINK_DEBUG_TAMPER_ENABLE == 1)
+        memcpy(macBuf, rx, macLen);
+
+        if (payloadLen > 0u) {
+            macBuf[RL_W3_OFF_PAYLOAD] ^= 0x01u;
+        } else {
+            macBuf[RL_W3_OFF_VERSION] ^= 0x01u;
+        }
+
+        radioLinkAesCmac128_Stub(gRlCryptoCtx.macKey, macBuf, macLen, expectedTag);
+    #else
+        radioLinkAesCmac128_Stub(gRlCryptoCtx.macKey, rx, macLen, expectedTag);
+    #endif
+
+        if (!radioLinkConstTimeEq16(expectedTag, rxTag)) {
             return false;
         }
     }
@@ -489,6 +705,10 @@ bool RadioLink_SendString(SX1262_Handle *sx, const char *s) {
 
     len = strlen(s);
     if (len > RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN) {
+        printf("RL: TX string too long: %lu > %u (truncating; v3 max=%u)\r\n",
+               (unsigned long)len,
+               (unsigned)RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN,
+               (unsigned)RADIOLINK_WIRE_V3_MAX_PLAINTEXT_LEN);
         len = RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN;
     }
 
@@ -546,16 +766,18 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
     // Crypto-enabled build will switch to Wire v3 later.
     // For now, keep Wire v2 to avoid behavior change until crypto is implemented.
 
-    // === WIRE_V3_ATTEMPT_RX (stub; expected to fail for now) ===
-    {
+    // === WIRE_V3_ATTEMPT_RX (CMAC verified) ===
+    if (rx_len >= (uint8_t)(RADIOLINK_WIRE_V3_HDR_LEN_DERIVED + RADIOLINK_WIRE_V3_TAG_LEN) &&
+        (rx[RL_W3_OFF_VERSION] == RADIOLINK_WIRE_V3_VERSION)) {
         uint8_t plainLen = 0u;
 
-        if (RadioLink_ParseWireV3Frame_Stub(rx, rx_len,
-                                           (uint8_t *)out, (uint8_t)(out_max - 1u),
-                                           &plainLen)) {
+        if (RadioLink_ParseWireV3Frame_Stub(rx, rx_len, (uint8_t *)out, (uint8_t)(out_max - 1u), &plainLen)) {
             out[plainLen] = '\0';
             return true;
         }
+
+        /* If it looks like v3 but fails validation, reject (do not fall through to legacy). */
+        return false;
     }
     // === END WIRE_V3_ATTEMPT_RX ===
 
@@ -675,6 +897,10 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
     }
 
     if (len > RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN) {
+        printf("RL: TX buf too long: %u > %u (truncating; v3 max=%u)\r\n",
+               (unsigned)len,
+               (unsigned)RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN,
+               (unsigned)RADIOLINK_WIRE_V3_MAX_PLAINTEXT_LEN);
         len = RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN;
     }
 
