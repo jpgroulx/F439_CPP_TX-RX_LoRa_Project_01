@@ -30,10 +30,8 @@ static uint32_t gRadioLinkLastSeenSessionSeqIdV3[256];
 static uint32_t gRadioLinkLastSeenCounterV3[256];
 static uint8_t gRadioLinkSeenV3[256];
 
-/* Debug: TX one-shot replay injection (Wire v3)
- * When enabled, TX resends the last v3 frame exactly once after the first send.
- */
-static uint8_t gRadioLinkDebugTxReplayOneShotDone;
+/* Debug: TX periodic replay injection (Wire v3 test support) */
+static uint32_t gRadioLinkDebugTxSendCount;
 
 static radioLinkCryptoCtx_t gRlCryptoCtx;
 
@@ -1026,19 +1024,17 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
 
 #if (RADIOLINK_DEBUG_TX_REPLAY_ONESHOT_ENABLE == 1)
 if (status) {
-    if (gRadioLinkDebugTxReplayOneShotDone == 0u) {
-        /* Resend the exact same bytes once (true replay).
-         * Do not rebuild the frame and do not bump counters before resend.
-         */
-        printf("RL: TX ONESHOT REPLAY node=%u sess=%lu ctr=%lu len=%u\r\n",
-               (unsigned)node_id,
-               (unsigned long)g_radiolink_sessionSeqId,
+    gRadioLinkDebugTxSendCount++;
+
+    /* Replay every Nth successful send */
+    if ((gRadioLinkDebugTxSendCount % 5u) == 0u) {
+        printf("RL: TX PERIODIC REPLAY ctr=%lu len=%u\r\n",
                (unsigned long)counter,
                (unsigned)frameLen);
 
-        (void)SX1262_SendBytes(sx, frame, frameLen);
+        HAL_Delay(200);
 
-        gRadioLinkDebugTxReplayOneShotDone = 1u;
+        (void)SX1262_SendBytes(sx, frame, frameLen);
     }
 }
 #endif

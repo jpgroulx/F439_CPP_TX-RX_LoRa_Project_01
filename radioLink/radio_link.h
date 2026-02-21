@@ -24,8 +24,9 @@
 
 /* Debug switches (set to 1 only during testing) */
 #define RADIOLINK_DEBUG_TAMPER_ENABLE 0
-#define RADIOLINK_DEBUG_REPLAY_REJECT_ENABLE 1
-#define RADIOLINK_DEBUG_TX_REPLAY_ONESHOT_ENABLE 1
+
+#define RADIOLINK_DEBUG_REPLAY_REJECT_ENABLE 0
+#define RADIOLINK_DEBUG_TX_REPLAY_ONESHOT_ENABLE 0
 
 /* Persistence policy */
 #define RL_PERSIST_ENABLE                 1
