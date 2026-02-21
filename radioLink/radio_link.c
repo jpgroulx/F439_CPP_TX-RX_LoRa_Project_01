@@ -23,6 +23,13 @@ static uint32_t g_radiolink_last_seen_sessionSeqId_v2[256];
 static uint32_t g_radiolink_last_seen_counter_v2[256];
 static uint8_t g_radiolink_seen_v2[256];
 
+/* Wire v3 replay state: per-node (sessionSeqId, lastAcceptedMsgCounter)
+ * NOTE: Enforcement is implemented in a later task (after CMAC verify).
+ */
+static uint32_t gRadioLinkLastSeenSessionSeqIdV3[256];
+static uint32_t gRadioLinkLastSeenCounterV3[256];
+static uint8_t gRadioLinkSeenV3[256];
+
 static radioLinkCryptoCtx_t gRlCryptoCtx;
 
 static const uint8_t gRadioLinkMasterKey_Default[16] = {
@@ -395,6 +402,11 @@ bool RadioLink_ParseWireV3Frame_Stub(const uint8_t *rx, uint8_t rxLen,
     uint8_t payloadLen;
     uint32_t expectedLen;
     uint8_t nonce[16];
+
+    /* Task 1: replay state is added but not enforced yet */
+    (void)gRadioLinkLastSeenSessionSeqIdV3;
+    (void)gRadioLinkLastSeenCounterV3;
+    (void)gRadioLinkSeenV3;
 
     if ((rx == NULL) || (outPlain == NULL) || (outPlainLen == NULL)) {
         return false;
