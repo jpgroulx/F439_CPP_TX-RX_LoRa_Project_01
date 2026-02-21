@@ -557,7 +557,7 @@ void _Error_Handler(const char *file, int line)
 	__disable_irq();
 #ifdef REDIRECT_PRINTF
 	char buf[80];
-	sprintf(buf, "Trapped in _Error_Handler().  Called from: %s, line: %d\r\n", file, line);
+	snprintf(buf, sizeof(buf), "Trapped in _Error_Handler().  Called from: %s, line: %d\r\n", file, line);
 	printf(buf);
 #endif
 	/* User can add his own implementation to report the HAL error return state */
