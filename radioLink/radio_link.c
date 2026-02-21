@@ -30,6 +30,11 @@ static uint32_t gRadioLinkLastSeenSessionSeqIdV3[256];
 static uint32_t gRadioLinkLastSeenCounterV3[256];
 static uint8_t gRadioLinkSeenV3[256];
 
+/* Debug: TX one-shot replay injection (Wire v3)
+ * When enabled, TX resends the last v3 frame exactly once after the first send.
+ */
+static uint8_t gRadioLinkDebugTxReplayOneShotDone;
+
 static radioLinkCryptoCtx_t gRlCryptoCtx;
 
 static const uint8_t gRadioLinkMasterKey_Default[16] = {
@@ -653,18 +658,36 @@ bool RadioLink_ParseWireV3Frame_Stub(const uint8_t *rx, uint8_t rxLen,
         }
 
         radioLinkAesCmac128_Stub(gRlCryptoCtx.macKey, macBuf, macLen, expectedTag);
-    #else
+#else
         radioLinkAesCmac128_Stub(gRlCryptoCtx.macKey, rx, macLen, expectedTag);
-    #endif
-
-        if (!radioLinkConstTimeEq16(expectedTag, rxTag)) {
-            return false;
-        }
+#endif
+    if (!radioLinkConstTimeEq16(expectedTag, rxTag)) {
+        return false;
     }
+}
 
-    if (payloadLen > 0u) {
-        memcpy(outPlain, &rx[RL_W3_OFF_PAYLOAD], payloadLen);
+/* Wire v3 replay enforcement (AFTER CMAC verification)
+ * Reject if msgCounter <= lastSeenCounter for same
+ * (nodeId, sessionSeqId).
+ */
+if (gRadioLinkSeenV3[nodeId] != 0u) {
+    if (gRadioLinkLastSeenSessionSeqIdV3[nodeId] == sessionSeqId) {
+    	if (msgCounter <= gRadioLinkLastSeenCounterV3[nodeId]) {
+    	#if (RADIOLINK_DEBUG_REPLAY_REJECT_ENABLE == 1)
+    	    printf("RL: W3 REPLAY REJECT node=%u sess=%lu ctr=%lu last=%lu\r\n",
+    	           (unsigned)nodeId,
+    	           (unsigned long)sessionSeqId,
+    	           (unsigned long)msgCounter,
+    	           (unsigned long)gRadioLinkLastSeenCounterV3[nodeId]);
+    	#endif
+    	    return false;
+    	}
     }
+}
+
+if (payloadLen > 0u) {
+    memcpy(outPlain, &rx[RL_W3_OFF_PAYLOAD], payloadLen);
+}
 
     memset(nonce, 0, sizeof(nonce));
     RadioLink_EncodeLe32(&nonce[0], sessionSeqId);
@@ -678,6 +701,13 @@ bool RadioLink_ParseWireV3Frame_Stub(const uint8_t *rx, uint8_t rxLen,
             return false;
         }
     }
+
+    /* Accept: update replay state only after
+     * CMAC verified AND decrypt succeeded.
+     */
+    gRadioLinkSeenV3[nodeId] = 1u;
+    gRadioLinkLastSeenSessionSeqIdV3[nodeId] = sessionSeqId;
+    gRadioLinkLastSeenCounterV3[nodeId] = msgCounter;
 
     *outPlainLen = payloadLen;
     return true;
@@ -993,6 +1023,25 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
     } else {
         status = SX1262_SendBytes(sx, frame, frameLen);
     }
+
+#if (RADIOLINK_DEBUG_TX_REPLAY_ONESHOT_ENABLE == 1)
+if (status) {
+    if (gRadioLinkDebugTxReplayOneShotDone == 0u) {
+        /* Resend the exact same bytes once (true replay).
+         * Do not rebuild the frame and do not bump counters before resend.
+         */
+        printf("RL: TX ONESHOT REPLAY node=%u sess=%lu ctr=%lu len=%u\r\n",
+               (unsigned)node_id,
+               (unsigned long)g_radiolink_sessionSeqId,
+               (unsigned long)counter,
+               (unsigned)frameLen);
+
+        (void)SX1262_SendBytes(sx, frame, frameLen);
+
+        gRadioLinkDebugTxReplayOneShotDone = 1u;
+    }
+}
+#endif
 
     if (status) {
         if (RadioLink_PersistAllowed()) {
