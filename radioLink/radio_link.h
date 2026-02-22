@@ -18,9 +18,16 @@
 
 // === RADIOLINK_CRYPTO_ENABLE (compile-time) ===
 #ifndef RADIOLINK_CRYPTO_ENABLE
-#define RADIOLINK_CRYPTO_ENABLE    (1)
+#define RADIOLINK_CRYPTO_ENABLE (1)
 #endif
 
+// === RADIOLINK_RX_ACCEPT_WIRE_V2 (compile-time) ===
+// RX legacy compatibility switch.
+// 1 = RX accepts Wire v2 frames (default for transition)
+// 0 = RX rejects Wire v2 frames (v3-only when crypto enabled)
+#ifndef RADIOLINK_RX_ACCEPT_WIRE_V2
+#define RADIOLINK_RX_ACCEPT_WIRE_V2 (1)
+#endif
 
 /* Debug switches (set to 1 only during testing) */
 #define RADIOLINK_DEBUG_TAMPER_ENABLE 0

@@ -756,8 +756,8 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
     }
 
     // === WIRE_VERSION_SELECT_RX (compile-time; no behavior change yet) ===
-    #if (RADIOLINK_CRYPTO_ENABLE == 0)
-
+#if (RADIOLINK_CRYPTO_ENABLE == 0)
+#if (RADIOLINK_RX_ACCEPT_WIRE_V2 != 0)
     /* Prefer Wire v2 when structurally valid */
     if (rx_len >= RADIOLINK_WIRE_V2_HDR_LEN && rx[0] == RADIOLINK_WIRE_V2_VERSION) {
         uint8_t node_id = rx[1];
@@ -788,7 +788,8 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
             payload_len = n;
         }
     }
-
+#endif
+    /* Prefer Wire v2 when structurally valid */
     #else
 
     // Crypto-enabled build will switch to Wire v3 later.
@@ -916,7 +917,7 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
 
 bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
     bool status = false;
-    uint8_t frame[RADIOLINK_WIRE_V2_MAX_FRAME_LEN];
+    uint8_t frame[RADIOLINK_WIRE_RADIO_MAX_LEN];
     uint8_t node_id;
     uint32_t counter;
 
@@ -990,30 +991,13 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
                                        len,
                                        &frameLen);
 #else
-// Crypto-enabled build will switch to Wire v3 later.
-// For now, v3 builder is stubbed and expected to fail, so we fall back to Wire v2.
-
-// === WIRE_V3_ATTEMPT_TX (stub; expected to fail for now) ===
-        ok = RadioLink_BuildWireV3Frame_Stub(frame, (uint8_t)sizeof(frame),
-                                             node_id,
-                                             g_radiolink_sessionSeqId,
-                                             counter,
-                                             buf, len,
-                                             &frameLen);
-// === END WIRE_V3_ATTEMPT_TX ===
-
+// Crypto-enabled build: TX must emit Wire v3 only (no downgrade).
+        ok = RadioLink_BuildWireV3Frame_Stub(frame, (uint8_t)sizeof(frame), node_id, g_radiolink_sessionSeqId, counter, buf, len, &frameLen);
         if (!ok) {
-        	ok = RadioLink_BuildWireV2Frame(frame,
-                                   (uint8_t)sizeof(frame),
-                                   node_id,
-                                   g_radiolink_sessionSeqId,
-                                   counter,
-                                   buf,
-                                   len,
-                                   &frameLen);
+        	printf("RL: TX v3 build failed (crypto enabled) - not sending\r\n");
         }
-
 #endif
+
     // === END WIRE_VERSION_SELECT_TX ===
 
     if (!ok) {
