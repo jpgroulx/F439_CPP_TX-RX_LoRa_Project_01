@@ -23,9 +23,10 @@
 
 // === RADIOLINK_RX_ACCEPT_WIRE_V2 (compile-time) ===
 // RX legacy compatibility switch.
-// 1 = RX accepts Wire v2 frames (default for transition)
-// 0 = RX rejects Wire v2 frames (v3-only when crypto enabled)
-#ifndef RADIOLINK_RX_ACCEPT_WIRE_V2
+// Automatically disabled when crypto is enabled.
+#if (RADIOLINK_CRYPTO_ENABLE != 0)
+#define RADIOLINK_RX_ACCEPT_WIRE_V2 (0)
+#else
 #define RADIOLINK_RX_ACCEPT_WIRE_V2 (1)
 #endif
 

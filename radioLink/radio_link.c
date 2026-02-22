@@ -810,35 +810,10 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
     }
     // === END WIRE_V3_ATTEMPT_RX ===
 
-    /* Prefer Wire v2 when structurally valid */
+    /* Crypto-enabled build: v3-only RX policy (no Wire v2 fallback). */
     if (rx_len >= RADIOLINK_WIRE_V2_HDR_LEN && rx[0] == RADIOLINK_WIRE_V2_VERSION) {
-        uint8_t node_id = rx[1];
-        uint32_t sessionSeqId = RadioLink_DecodeLe32(&rx[2]);
-        uint32_t counter = RadioLink_DecodeLe32(&rx[6]);
-        uint8_t n = rx[10];
-
-        /* Structural validation: exact frame length must be present */
-        if ((n <= RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN) && ((uint8_t)(RADIOLINK_WIRE_V2_HDR_LEN + n) == rx_len)) {
-            /* Replay protection: (sessionSeqId, counter) per node_id */
-            if (g_radiolink_seen_v2[node_id]) {
-                uint32_t lastSession = g_radiolink_last_seen_sessionSeqId_v2[node_id];
-                uint32_t lastCounter = g_radiolink_last_seen_counter_v2[node_id];
-
-                if (sessionSeqId < lastSession) {
-                    return false;
-                }
-                if ((sessionSeqId == lastSession) && (counter <= lastCounter)) {
-                    return false;
-                }
-            }
-
-            g_radiolink_seen_v2[node_id] = 1U;
-            g_radiolink_last_seen_sessionSeqId_v2[node_id] = sessionSeqId;
-            g_radiolink_last_seen_counter_v2[node_id] = counter;
-
-            payload = &rx[RADIOLINK_WIRE_V2_HDR_LEN];
-            payload_len = n;
-        }
+        printf("RL: RX reject wire v2 (v3-only)\r\n");
+        return false;
     }
 
     #endif
