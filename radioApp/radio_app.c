@@ -85,7 +85,7 @@ void RadioApp_Loop(void) {
 			    if (ver == RADIOLINK_WIRE_V3_VERSION) {
 			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V3_HDR_LEN_DERIVED) ? r.payload_len : RADIOLINK_WIRE_V3_HDR_LEN_DERIVED);
 			    } else if (ver == RADIOLINK_WIRE_V2_VERSION) {
-			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V2_HDR_LEN) ? r.payload_len : RADIOLINK_WIRE_V2_HDR_LEN);
+			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V3_HDR_LEN) ? r.payload_len : RADIOLINK_WIRE_V3_HDR_LEN);
 			    } else if (ver == RADIOLINK_WIRE_V1_VERSION) {
 			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V1_HDR_LEN) ? r.payload_len : RADIOLINK_WIRE_V1_HDR_LEN);
 			    } else {

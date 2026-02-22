@@ -15,15 +15,6 @@
 
 static uint32_t g_radiolink_tx_counter;
 static uint32_t g_radiolink_sessionSeqId;
-static uint32_t g_radiolink_last_seen_counter[256];
-static uint8_t g_radiolink_seen[256];
-
-#if (RADIOLINK_CRYPTO_ENABLE == 0)
-/* Wire v2 replay state: per-node (sessionSeqId, msgCounter) */
-static uint32_t g_radiolink_last_seen_sessionSeqId_v2[256];
-static uint32_t g_radiolink_last_seen_counter_v2[256];
-static uint8_t g_radiolink_seen_v2[256];
-#endif
 
 /* Wire v3 replay state: per-node (sessionSeqId, lastAcceptedMsgCounter)
  * NOTE: Enforcement is implemented in a later task (after CMAC verify).
@@ -719,15 +710,6 @@ if (payloadLen > 0u) {
 
 // === END WIRE_V3_CRYPTO_STUBS ===
 
-uint8_t RadioLink_WireV0_FrameLenFromPayloadLen(uint8_t payload_len) {
-    uint8_t frame_len = 0;
-
-    /* 1 + payload_len (wrap-safe because payload_len is u8) */
-    frame_len = (uint8_t)(RADIOLINK_WIRE_V0_HDR_LEN + payload_len);
-
-    return frame_len;
-}
-
 bool RadioLink_SendString(SX1262_Handle *sx, const char *s) {
     bool status = false;
     size_t len;
@@ -752,148 +734,28 @@ bool RadioLink_SendString(SX1262_Handle *sx, const char *s) {
     return status;
 }
 
-bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, uint8_t out_max) {
-    bool status = false;
-    const uint8_t *payload = NULL;
-    uint8_t payload_len = 0;
+bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, uint8_t out_max)
+{
+    uint8_t plainLen = 0u;
 
     if (!rx || !out || (out_max == 0U)) {
         return false;
     }
 
-    // === WIRE_VERSION_SELECT_RX (compile-time; no behavior change yet) ===
-#if (RADIOLINK_CRYPTO_ENABLE == 0)
-#if (RADIOLINK_RX_ACCEPT_WIRE_V2 != 0)
-    /* Prefer Wire v2 when structurally valid */
-    if (rx_len >= RADIOLINK_WIRE_V2_HDR_LEN && rx[0] == RADIOLINK_WIRE_V2_VERSION) {
-        uint8_t node_id = rx[1];
-        uint32_t sessionSeqId = RadioLink_DecodeLe32(&rx[2]);
-        uint32_t counter = RadioLink_DecodeLe32(&rx[6]);
-        uint8_t n = rx[10];
-
-        /* Structural validation: exact frame length must be present */
-        if ((n <= RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN) && ((uint8_t)(RADIOLINK_WIRE_V2_HDR_LEN + n) == rx_len)) {
-            /* Replay protection: (sessionSeqId, counter) per node_id */
-            if (g_radiolink_seen_v2[node_id]) {
-                uint32_t lastSession = g_radiolink_last_seen_sessionSeqId_v2[node_id];
-                uint32_t lastCounter = g_radiolink_last_seen_counter_v2[node_id];
-
-                if (sessionSeqId < lastSession) {
-                    return false;
-                }
-                if ((sessionSeqId == lastSession) && (counter <= lastCounter)) {
-                    return false;
-                }
-            }
-
-            g_radiolink_seen_v2[node_id] = 1U;
-            g_radiolink_last_seen_sessionSeqId_v2[node_id] = sessionSeqId;
-            g_radiolink_last_seen_counter_v2[node_id] = counter;
-
-            payload = &rx[RADIOLINK_WIRE_V2_HDR_LEN];
-            payload_len = n;
-        }
-    }
-#endif
-    /* Prefer Wire v2 when structurally valid */
-    #else
-
-    // Crypto-enabled build will switch to Wire v3 later.
-    // For now, keep Wire v2 to avoid behavior change until crypto is implemented.
-
-    // === WIRE_V3_ATTEMPT_RX (CMAC verified) ===
-    if (rx_len >= (uint8_t)(RADIOLINK_WIRE_V3_HDR_LEN_DERIVED + RADIOLINK_WIRE_V3_TAG_LEN) &&
-        (rx[RL_W3_OFF_VERSION] == RADIOLINK_WIRE_V3_VERSION)) {
-        uint8_t plainLen = 0u;
-
-        if (RadioLink_ParseWireV3Frame_Stub(rx, rx_len, (uint8_t *)out, (uint8_t)(out_max - 1u), &plainLen)) {
-            out[plainLen] = '\0';
-            return true;
-        }
-
-        /* If it looks like v3 but fails validation, reject (do not fall through to legacy). */
-        return false;
-    }
-    // === END WIRE_V3_ATTEMPT_RX ===
-
-    /* Crypto-enabled build: v3-only RX policy (no Wire v2 fallback). */
-    if (rx_len >= RADIOLINK_WIRE_V2_HDR_LEN && rx[0] == RADIOLINK_WIRE_V2_VERSION) {
-        printf("RL: RX reject wire v2 (v3-only)\r\n");
+    if (rx_len < (uint8_t)(RADIOLINK_WIRE_V3_HDR_LEN_DERIVED + RADIOLINK_WIRE_V3_TAG_LEN)) {
         return false;
     }
 
-    #endif
-    // === END WIRE_VERSION_SELECT_RX ===
-
-    /* ============================================================
-     * LEGACY_WIRE_SUPPORT (V0/V1)
-     * ------------------------------------------------------------
-     * Historical development support for early radio bring-up.
-     *
-     * TX no longer emits V0/V1 frames (Wire v2 only).
-     * RX retains legacy parsing temporarily for rollback safety.
-     *
-     * TODO:
-     *   Remove this entire section once project is fully stabilized
-     *   and legacy compatibility is no longer required.
-     *
-     * Search tag: LEGACY_WIRE_SUPPORT
-     * ============================================================ */
-
-    /* Fallback: Wire v1 when structurally valid */
-    if (!payload) {
-        if (rx_len >= RADIOLINK_WIRE_V1_HDR_LEN && rx[0] == RADIOLINK_WIRE_V1_VERSION) {
-            uint8_t node_id = rx[1];
-            uint32_t counter = RadioLink_DecodeLe32(&rx[2]);
-            uint8_t n = rx[6];
-
-            if ((n <= RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN) &&
-                ((uint8_t)(RADIOLINK_WIRE_V1_HDR_LEN + n) == rx_len)) {
-
-                if (g_radiolink_seen[node_id]) {
-                    if (counter <= g_radiolink_last_seen_counter[node_id]) {
-                        return false;
-                    }
-                }
-                g_radiolink_seen[node_id] = 1U;
-                g_radiolink_last_seen_counter[node_id] = counter;
-
-                payload = &rx[RADIOLINK_WIRE_V1_HDR_LEN];
-                payload_len = n;
-            }
-        }
+    if (rx[RL_W3_OFF_VERSION] != RADIOLINK_WIRE_V3_VERSION) {
+        return false;
     }
 
-
-    /* Fallback: Wire v0 */
-    if (!payload) {
-        uint8_t n;
-        uint8_t avail;
-
-        if (rx_len < RADIOLINK_WIRE_V0_HDR_LEN) {
-            return false;
-        }
-
-        n = rx[0];
-        avail = (uint8_t)(rx_len - RADIOLINK_WIRE_V0_HDR_LEN);
-        if (n > avail) {
-            n = avail;
-        }
-
-        payload = &rx[RADIOLINK_WIRE_V0_HDR_LEN];
-        payload_len = n;
+    if (!RadioLink_ParseWireV3Frame_Stub(rx, rx_len, (uint8_t *)out, (uint8_t)(out_max - 1u), &plainLen)) {
+        return false;
     }
 
-    /* Copy to output buffer and NUL-terminate */
-    if (payload_len >= out_max) {
-        payload_len = (uint8_t)(out_max - 1U);
-    }
-
-    memcpy(out, payload, payload_len);
-    out[payload_len] = 0;
-
-    status = true;
-    return status;
+    out[plainLen] = '\0';
+    return true;
 }
 
 bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
@@ -1004,12 +866,13 @@ if (status) {
 }
 #endif
 
-    if (status) {
-        if (RadioLink_PersistAllowed()) {
-            g_radiolink_tx_counter = counter + 1U;
-            RadioLink_TxCounter_Store(g_radiolink_tx_counter);
-        }
-    }
+	if (status) {
+		g_radiolink_tx_counter = counter + 1U;
+
+		if (RadioLink_PersistAllowed()) {
+			RadioLink_TxCounter_Store(g_radiolink_tx_counter);
+		}
+	}
 
     return status;
 }
