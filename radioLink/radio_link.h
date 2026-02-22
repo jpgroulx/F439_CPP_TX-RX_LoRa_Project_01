@@ -18,13 +18,23 @@
 
 // === RADIOLINK_CRYPTO_ENABLE (compile-time) ===
 #ifndef RADIOLINK_CRYPTO_ENABLE
-#define RADIOLINK_CRYPTO_ENABLE    (1)
+#define RADIOLINK_CRYPTO_ENABLE (1)
 #endif
 
+// === RADIOLINK_RX_ACCEPT_WIRE_V2 (compile-time) ===
+// RX legacy compatibility switch.
+// Automatically disabled when crypto is enabled.
+#if (RADIOLINK_CRYPTO_ENABLE != 0)
+#define RADIOLINK_RX_ACCEPT_WIRE_V2 (0)
+#else
+#define RADIOLINK_RX_ACCEPT_WIRE_V2 (1)
+#endif
 
+/* Debug switches (set to 1 only during testing) */
 #define RADIOLINK_DEBUG_TAMPER_ENABLE 0
 
-// === END RADIOLINK_CRYPTO_ENABLE ===
+#define RADIOLINK_DEBUG_REPLAY_REJECT_ENABLE 0
+#define RADIOLINK_DEBUG_TX_REPLAY_ONESHOT_ENABLE 0
 
 /* Persistence policy */
 #define RL_PERSIST_ENABLE                 1

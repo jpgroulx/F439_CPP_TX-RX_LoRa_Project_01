@@ -82,7 +82,9 @@ void RadioApp_Loop(void) {
 			    }
 
 			    /* Raw header dump (debug): print the whole header for known versions */
-			    if (ver == RADIOLINK_WIRE_V2_VERSION) {
+			    if (ver == RADIOLINK_WIRE_V3_VERSION) {
+			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V3_HDR_LEN_DERIVED) ? r.payload_len : RADIOLINK_WIRE_V3_HDR_LEN_DERIVED);
+			    } else if (ver == RADIOLINK_WIRE_V2_VERSION) {
 			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V2_HDR_LEN) ? r.payload_len : RADIOLINK_WIRE_V2_HDR_LEN);
 			    } else if (ver == RADIOLINK_WIRE_V1_VERSION) {
 			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V1_HDR_LEN) ? r.payload_len : RADIOLINK_WIRE_V1_HDR_LEN);
@@ -102,7 +104,35 @@ void RadioApp_Loop(void) {
 			status = RadioLink_TryDecodeToString(r.payload, r.payload_len, s, (uint8_t)(sizeof(s) - 1U));
 #ifndef RF_DEBUG
 			if (status) {
-				printf("RX: %s RSSI=%d SNR=%d\r\n", s, r.rssi_pkt, r.snr_pkt);
+				uint32_t rxSess = 0U;
+				uint32_t rxCtr = 0U;
+
+				uint8_t ver = 0U;
+
+				if (r.payload_len > 0U) {
+				    ver = r.payload[0U];
+				}
+
+				if ((r.payload_len >= 10U) && ((ver == RADIOLINK_WIRE_V2_VERSION) || (ver == RADIOLINK_WIRE_V3_VERSION))) {
+				    rxSess =
+				        ((uint32_t)r.payload[2U] << 0) |
+				        ((uint32_t)r.payload[3U] << 8) |
+				        ((uint32_t)r.payload[4U] << 16) |
+				        ((uint32_t)r.payload[5U] << 24);
+
+				    rxCtr =
+				        ((uint32_t)r.payload[6U] << 0) |
+				        ((uint32_t)r.payload[7U] << 8) |
+				        ((uint32_t)r.payload[8U] << 16) |
+				        ((uint32_t)r.payload[9U] << 24);
+				}
+
+				printf("RX: %s sess=%lu ctr=%lu RSSI=%d SNR=%d\r\n",
+				       s,
+				       (unsigned long)rxSess,
+				       (unsigned long)rxCtr,
+				       r.rssi_pkt,
+				       r.snr_pkt);
 			}
 #endif
 		}

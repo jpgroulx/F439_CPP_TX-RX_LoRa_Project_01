@@ -18,10 +18,12 @@ static uint32_t g_radiolink_sessionSeqId;
 static uint32_t g_radiolink_last_seen_counter[256];
 static uint8_t g_radiolink_seen[256];
 
+#if (RADIOLINK_CRYPTO_ENABLE == 0)
 /* Wire v2 replay state: per-node (sessionSeqId, msgCounter) */
 static uint32_t g_radiolink_last_seen_sessionSeqId_v2[256];
 static uint32_t g_radiolink_last_seen_counter_v2[256];
 static uint8_t g_radiolink_seen_v2[256];
+#endif
 
 /* Wire v3 replay state: per-node (sessionSeqId, lastAcceptedMsgCounter)
  * NOTE: Enforcement is implemented in a later task (after CMAC verify).
@@ -29,6 +31,11 @@ static uint8_t g_radiolink_seen_v2[256];
 static uint32_t gRadioLinkLastSeenSessionSeqIdV3[256];
 static uint32_t gRadioLinkLastSeenCounterV3[256];
 static uint8_t gRadioLinkSeenV3[256];
+
+#if (RADIOLINK_DEBUG_TX_REPLAY_ONESHOT_ENABLE == 1)
+/* Debug: TX periodic replay injection (Wire v3 test support) */
+static uint32_t gRadioLinkDebugTxSendCount;
+#endif
 
 static radioLinkCryptoCtx_t gRlCryptoCtx;
 
@@ -453,6 +460,7 @@ static uint32_t RadioLink_DecodeLe32(const uint8_t in[4]) {
     return v;
 }
 
+#if (RADIOLINK_CRYPTO_ENABLE == 0)
 static bool RadioLink_BuildWireV2Frame(uint8_t *frame,
                                        uint8_t frameMax,
                                        uint8_t nodeId,
@@ -491,6 +499,7 @@ static bool RadioLink_BuildWireV2Frame(uint8_t *frame,
 
     return ok;
 }
+#endif
 
 /* Default node_id derivation: stable u8 from STM32 UID words. */
 static uint8_t RadioLink_GetNodeId(void) {
@@ -653,18 +662,36 @@ bool RadioLink_ParseWireV3Frame_Stub(const uint8_t *rx, uint8_t rxLen,
         }
 
         radioLinkAesCmac128_Stub(gRlCryptoCtx.macKey, macBuf, macLen, expectedTag);
-    #else
+#else
         radioLinkAesCmac128_Stub(gRlCryptoCtx.macKey, rx, macLen, expectedTag);
-    #endif
-
-        if (!radioLinkConstTimeEq16(expectedTag, rxTag)) {
-            return false;
-        }
+#endif
+    if (!radioLinkConstTimeEq16(expectedTag, rxTag)) {
+        return false;
     }
+}
 
-    if (payloadLen > 0u) {
-        memcpy(outPlain, &rx[RL_W3_OFF_PAYLOAD], payloadLen);
+/* Wire v3 replay enforcement (AFTER CMAC verification)
+ * Reject if msgCounter <= lastSeenCounter for same
+ * (nodeId, sessionSeqId).
+ */
+if (gRadioLinkSeenV3[nodeId] != 0u) {
+    if (gRadioLinkLastSeenSessionSeqIdV3[nodeId] == sessionSeqId) {
+    	if (msgCounter <= gRadioLinkLastSeenCounterV3[nodeId]) {
+    	#if (RADIOLINK_DEBUG_REPLAY_REJECT_ENABLE == 1)
+    	    printf("RL: W3 REPLAY REJECT node=%u sess=%lu ctr=%lu last=%lu\r\n",
+    	           (unsigned)nodeId,
+    	           (unsigned long)sessionSeqId,
+    	           (unsigned long)msgCounter,
+    	           (unsigned long)gRadioLinkLastSeenCounterV3[nodeId]);
+    	#endif
+    	    return false;
+    	}
     }
+}
+
+if (payloadLen > 0u) {
+    memcpy(outPlain, &rx[RL_W3_OFF_PAYLOAD], payloadLen);
+}
 
     memset(nonce, 0, sizeof(nonce));
     RadioLink_EncodeLe32(&nonce[0], sessionSeqId);
@@ -678,6 +705,13 @@ bool RadioLink_ParseWireV3Frame_Stub(const uint8_t *rx, uint8_t rxLen,
             return false;
         }
     }
+
+    /* Accept: update replay state only after
+     * CMAC verified AND decrypt succeeded.
+     */
+    gRadioLinkSeenV3[nodeId] = 1u;
+    gRadioLinkLastSeenSessionSeqIdV3[nodeId] = sessionSeqId;
+    gRadioLinkLastSeenCounterV3[nodeId] = msgCounter;
 
     *outPlainLen = payloadLen;
     return true;
@@ -728,8 +762,8 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
     }
 
     // === WIRE_VERSION_SELECT_RX (compile-time; no behavior change yet) ===
-    #if (RADIOLINK_CRYPTO_ENABLE == 0)
-
+#if (RADIOLINK_CRYPTO_ENABLE == 0)
+#if (RADIOLINK_RX_ACCEPT_WIRE_V2 != 0)
     /* Prefer Wire v2 when structurally valid */
     if (rx_len >= RADIOLINK_WIRE_V2_HDR_LEN && rx[0] == RADIOLINK_WIRE_V2_VERSION) {
         uint8_t node_id = rx[1];
@@ -760,7 +794,8 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
             payload_len = n;
         }
     }
-
+#endif
+    /* Prefer Wire v2 when structurally valid */
     #else
 
     // Crypto-enabled build will switch to Wire v3 later.
@@ -781,35 +816,10 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
     }
     // === END WIRE_V3_ATTEMPT_RX ===
 
-    /* Prefer Wire v2 when structurally valid */
+    /* Crypto-enabled build: v3-only RX policy (no Wire v2 fallback). */
     if (rx_len >= RADIOLINK_WIRE_V2_HDR_LEN && rx[0] == RADIOLINK_WIRE_V2_VERSION) {
-        uint8_t node_id = rx[1];
-        uint32_t sessionSeqId = RadioLink_DecodeLe32(&rx[2]);
-        uint32_t counter = RadioLink_DecodeLe32(&rx[6]);
-        uint8_t n = rx[10];
-
-        /* Structural validation: exact frame length must be present */
-        if ((n <= RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN) && ((uint8_t)(RADIOLINK_WIRE_V2_HDR_LEN + n) == rx_len)) {
-            /* Replay protection: (sessionSeqId, counter) per node_id */
-            if (g_radiolink_seen_v2[node_id]) {
-                uint32_t lastSession = g_radiolink_last_seen_sessionSeqId_v2[node_id];
-                uint32_t lastCounter = g_radiolink_last_seen_counter_v2[node_id];
-
-                if (sessionSeqId < lastSession) {
-                    return false;
-                }
-                if ((sessionSeqId == lastSession) && (counter <= lastCounter)) {
-                    return false;
-                }
-            }
-
-            g_radiolink_seen_v2[node_id] = 1U;
-            g_radiolink_last_seen_sessionSeqId_v2[node_id] = sessionSeqId;
-            g_radiolink_last_seen_counter_v2[node_id] = counter;
-
-            payload = &rx[RADIOLINK_WIRE_V2_HDR_LEN];
-            payload_len = n;
-        }
+        printf("RL: RX reject wire v2 (v3-only)\r\n");
+        return false;
     }
 
     #endif
@@ -888,7 +898,7 @@ bool RadioLink_TryDecodeToString(const uint8_t *rx, uint8_t rx_len, char *out, u
 
 bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
     bool status = false;
-    uint8_t frame[RADIOLINK_WIRE_V2_MAX_FRAME_LEN];
+    uint8_t frame[RADIOLINK_WIRE_RADIO_MAX_LEN];
     uint8_t node_id;
     uint32_t counter;
 
@@ -962,30 +972,13 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
                                        len,
                                        &frameLen);
 #else
-// Crypto-enabled build will switch to Wire v3 later.
-// For now, v3 builder is stubbed and expected to fail, so we fall back to Wire v2.
-
-// === WIRE_V3_ATTEMPT_TX (stub; expected to fail for now) ===
-        ok = RadioLink_BuildWireV3Frame_Stub(frame, (uint8_t)sizeof(frame),
-                                             node_id,
-                                             g_radiolink_sessionSeqId,
-                                             counter,
-                                             buf, len,
-                                             &frameLen);
-// === END WIRE_V3_ATTEMPT_TX ===
-
+// Crypto-enabled build: TX must emit Wire v3 only (no downgrade).
+        ok = RadioLink_BuildWireV3Frame_Stub(frame, (uint8_t)sizeof(frame), node_id, g_radiolink_sessionSeqId, counter, buf, len, &frameLen);
         if (!ok) {
-        	ok = RadioLink_BuildWireV2Frame(frame,
-                                   (uint8_t)sizeof(frame),
-                                   node_id,
-                                   g_radiolink_sessionSeqId,
-                                   counter,
-                                   buf,
-                                   len,
-                                   &frameLen);
+        	printf("RL: TX v3 build failed (crypto enabled) - not sending\r\n");
         }
-
 #endif
+
     // === END WIRE_VERSION_SELECT_TX ===
 
     if (!ok) {
@@ -993,6 +986,23 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
     } else {
         status = SX1262_SendBytes(sx, frame, frameLen);
     }
+
+#if (RADIOLINK_DEBUG_TX_REPLAY_ONESHOT_ENABLE == 1)
+if (status) {
+    gRadioLinkDebugTxSendCount++;
+
+    /* Replay every Nth successful send */
+    if ((gRadioLinkDebugTxSendCount % 5u) == 0u) {
+        printf("RL: TX PERIODIC REPLAY ctr=%lu len=%u\r\n",
+               (unsigned long)counter,
+               (unsigned)frameLen);
+
+        HAL_Delay(200);
+
+        (void)SX1262_SendBytes(sx, frame, frameLen);
+    }
+}
+#endif
 
     if (status) {
         if (RadioLink_PersistAllowed()) {
