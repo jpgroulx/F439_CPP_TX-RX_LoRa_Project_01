@@ -18,10 +18,12 @@ static uint32_t g_radiolink_sessionSeqId;
 static uint32_t g_radiolink_last_seen_counter[256];
 static uint8_t g_radiolink_seen[256];
 
+#if (RADIOLINK_CRYPTO_ENABLE == 0)
 /* Wire v2 replay state: per-node (sessionSeqId, msgCounter) */
 static uint32_t g_radiolink_last_seen_sessionSeqId_v2[256];
 static uint32_t g_radiolink_last_seen_counter_v2[256];
 static uint8_t g_radiolink_seen_v2[256];
+#endif
 
 /* Wire v3 replay state: per-node (sessionSeqId, lastAcceptedMsgCounter)
  * NOTE: Enforcement is implemented in a later task (after CMAC verify).
@@ -30,8 +32,10 @@ static uint32_t gRadioLinkLastSeenSessionSeqIdV3[256];
 static uint32_t gRadioLinkLastSeenCounterV3[256];
 static uint8_t gRadioLinkSeenV3[256];
 
+#if (RADIOLINK_DEBUG_TX_REPLAY_ONESHOT_ENABLE == 1)
 /* Debug: TX periodic replay injection (Wire v3 test support) */
 static uint32_t gRadioLinkDebugTxSendCount;
+#endif
 
 static radioLinkCryptoCtx_t gRlCryptoCtx;
 
@@ -456,6 +460,7 @@ static uint32_t RadioLink_DecodeLe32(const uint8_t in[4]) {
     return v;
 }
 
+#if (RADIOLINK_CRYPTO_ENABLE == 0)
 static bool RadioLink_BuildWireV2Frame(uint8_t *frame,
                                        uint8_t frameMax,
                                        uint8_t nodeId,
@@ -494,6 +499,7 @@ static bool RadioLink_BuildWireV2Frame(uint8_t *frame,
 
     return ok;
 }
+#endif
 
 /* Default node_id derivation: stable u8 from STM32 UID words. */
 static uint8_t RadioLink_GetNodeId(void) {
