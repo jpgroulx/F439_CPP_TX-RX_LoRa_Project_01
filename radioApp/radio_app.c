@@ -84,10 +84,6 @@ void RadioApp_Loop(void) {
 			    /* Raw header dump (debug): print the whole header for known versions */
 			    if (ver == RADIOLINK_WIRE_V3_VERSION) {
 			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V3_HDR_LEN_DERIVED) ? r.payload_len : RADIOLINK_WIRE_V3_HDR_LEN_DERIVED);
-			    } else if (ver == RADIOLINK_WIRE_V2_VERSION) {
-			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V3_HDR_LEN) ? r.payload_len : RADIOLINK_WIRE_V3_HDR_LEN);
-			    } else if (ver == RADIOLINK_WIRE_V1_VERSION) {
-			        hdrBytes = (uint8_t)((r.payload_len < RADIOLINK_WIRE_V1_HDR_LEN) ? r.payload_len : RADIOLINK_WIRE_V1_HDR_LEN);
 			    } else {
 			        /* Unknown version: show up to 8 bytes max */
 			        hdrBytes = (uint8_t)((r.payload_len < 8U) ? r.payload_len : 8U);
@@ -113,7 +109,7 @@ void RadioApp_Loop(void) {
 				    ver = r.payload[0U];
 				}
 
-				if ((r.payload_len >= 10U) && ((ver == RADIOLINK_WIRE_V2_VERSION) || (ver == RADIOLINK_WIRE_V3_VERSION))) {
+				if ((r.payload_len >= 10U) && (ver == RADIOLINK_WIRE_V3_VERSION)) {
 				    rxSess =
 				        ((uint32_t)r.payload[2U] << 0) |
 				        ((uint32_t)r.payload[3U] << 8) |
