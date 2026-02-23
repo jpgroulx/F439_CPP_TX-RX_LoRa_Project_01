@@ -775,7 +775,9 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
 
     counter = g_radiolink_tx_counter;
 
+#ifndef RF_DEBUG2
     printf("RL: TX ctr=%lu\r\n", (unsigned long)counter);
+#endif
 
     uint8_t frameLen = 0U;
     bool ok = false;

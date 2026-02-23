@@ -74,6 +74,7 @@ void RadioApp_Loop(void) {
 			bool status = false;
 
 			{
+#ifndef RF_DEBUG2
 			    uint8_t ver = 0U;
 			    uint8_t hdrBytes = 0U;
 
@@ -89,16 +90,23 @@ void RadioApp_Loop(void) {
 			        hdrBytes = (uint8_t)((r.payload_len < 8U) ? r.payload_len : 8U);
 			    }
 
+
 			    printf("RXHDR:");
 			    for (uint8_t i = 0U; i < hdrBytes; i++) {
 			        printf(" %02X", (unsigned)r.payload[i]);
 			    }
 			    printf(" len=%u\r\n", (unsigned)r.payload_len);
+#endif
 			}
 
 
 			status = RadioLink_TryDecodeToString(r.payload, r.payload_len, s, (uint8_t)(sizeof(s) - 1U));
-#ifndef RF_DEBUG
+
+			if (!status) {
+				Error_Handler();
+			}
+
+#ifndef RF_DEBUG2
 			if (status) {
 				uint32_t rxSess = 0U;
 				uint32_t rxCtr = 0U;
@@ -158,7 +166,7 @@ void RadioApp_Loop(void) {
 
 			status = RadioLink_SendString(g_sx, msg);
 
-#ifndef RF_DEBUG
+#ifndef RF_DEBUG2
 			if (status) {
 				printf("TX: STR [%s]\r\n", msg);
 			}
