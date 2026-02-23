@@ -33,43 +33,7 @@
 #define RL_PERSIST_ENABLE                 1
 #define RL_PERSIST_DISABLE_WHEN_DEBUGGER  1
 
-
-/* Wire format v0:
- *   [ u8 payload_len | payload_bytes... ]
- *
- * payload_len is the number of payload bytes that follow.
- * Total on-air length = 1 + payload_len.
- */
-#define RADIOLINK_WIRE_V0_HDR_LEN          (1U)
-#define RADIOLINK_WIRE_V0_MAX_PAYLOAD_LEN  (255U)
-#define RADIOLINK_WIRE_V0_MAX_FRAME_LEN    (256U)
-
-/* Wire v1 (Counters / Replay) */
-#define RADIOLINK_WIRE_V1_VERSION            (0x01U)
-
-/* v1 header: [ver(1) | node_id(1) | counter_le(4) | payload_len(1)] */
-#define RADIOLINK_WIRE_V1_HDR_LEN            (1U + 1U + 4U + 1U)
-
-/* Keep payload bound small for now (matches planned radio_msg_t payload[64]) */
-#define RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN    (64U)
-#define RADIOLINK_WIRE_V1_MAX_FRAME_LEN      (RADIOLINK_WIRE_V1_HDR_LEN + RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN)
-
-/* Wire v2 (Session + Counters / Replay)
- * v2 header: [ver(1) | node_id(1) | sessionSeqId_le(4) | msgCounter_le(4) | payload_len(1)]
- * Layout:
- *   [0]    version=2
- *   [1]    nodeId
- *   [2..5] sessionSeqId LE32
- *   [6..9] msgCounter  LE32
- *   [10]   payloadLen
- *   [11..] payload bytes
- */
-#define RADIOLINK_WIRE_V2_VERSION (0x02U)
-
 #define RADIOLINK_WIRE_V3_HDR_LEN (RADIOLINK_WIRE_V3_HDR_LEN_DERIVED)
-
-#define RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN (RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN)
-#define RADIOLINK_WIRE_V2_MAX_FRAME_LEN (RADIOLINK_WIRE_V2_HDR_LEN + RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN)
 
 // === WIRE_V3_CRYPTO_CONSTANTS (public routing; derived in radio_wire.h) ===
 #define RADIOLINK_W3_VERSION                 (RADIOLINK_WIRE_V3_VERSION)

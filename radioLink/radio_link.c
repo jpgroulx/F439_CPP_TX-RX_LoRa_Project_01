@@ -17,7 +17,7 @@ static uint32_t g_radiolink_tx_counter;
 static uint32_t g_radiolink_sessionSeqId;
 
 /* Wire v3 replay state: per-node (sessionSeqId, lastAcceptedMsgCounter)
- * NOTE: Enforcement is implemented in a later task (after CMAC verify).
+ * NOTE: Replay enforcement is applied after CMAC verification (v3-only).
  */
 static uint32_t gRadioLinkLastSeenSessionSeqIdV3[256];
 static uint32_t gRadioLinkLastSeenCounterV3[256];
@@ -451,47 +451,6 @@ static uint32_t RadioLink_DecodeLe32(const uint8_t in[4]) {
     return v;
 }
 
-#if (RADIOLINK_CRYPTO_ENABLE == 0)
-static bool RadioLink_BuildWireV2Frame(uint8_t *frame,
-                                       uint8_t frameMax,
-                                       uint8_t nodeId,
-                                       uint32_t sessionSeqId,
-                                       uint32_t msgCounter,
-                                       const uint8_t *payload,
-                                       uint8_t payloadLen,
-                                       uint8_t *outFrameLen)
-{
-    bool ok = false;
-    uint8_t frameLen = 0U;
-
-    if (!frame || !outFrameLen || (!payload && payloadLen != 0U)) {
-        ok = false;
-    } else if (payloadLen > RADIOLINK_WIRE_V2_MAX_PAYLOAD_LEN) {
-        ok = false;
-    } else {
-        frameLen = (uint8_t)(RADIOLINK_WIRE_V2_HDR_LEN + payloadLen);
-        if (frameLen > frameMax) {
-            ok = false;
-        } else {
-            frame[RL_W2_OFF_VER] = RADIOLINK_WIRE_V2_VERSION;
-            frame[RL_W2_OFF_NODE_ID] = nodeId;
-            RadioLink_EncodeLe32(&frame[RL_W2_OFF_SESSION_LE], sessionSeqId);
-            RadioLink_EncodeLe32(&frame[RL_W2_OFF_COUNTER_LE], msgCounter);
-            frame[RL_W2_OFF_PAYLOAD_LEN] = payloadLen;
-
-            if (payloadLen != 0U) {
-                memcpy(&frame[RL_W2_OFF_PAYLOAD], payload, payloadLen);
-            }
-
-            *outFrameLen = frameLen;
-            ok = true;
-        }
-    }
-
-    return ok;
-}
-#endif
-
 /* Default node_id derivation: stable u8 from STM32 UID words. */
 static uint8_t RadioLink_GetNodeId(void) {
     uint8_t id = 0;
@@ -720,12 +679,11 @@ bool RadioLink_SendString(SX1262_Handle *sx, const char *s) {
     }
 
     len = strlen(s);
-    if (len > RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN) {
-        printf("RL: TX string too long: %lu > %u (truncating; v3 max=%u)\r\n",
+    if (len > RADIOLINK_WIRE_V3_MAX_PLAINTEXT_LEN) {
+        printf("RL: TX string too long: %lu > %u (truncating)\r\n",
                (unsigned long)len,
-               (unsigned)RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN,
                (unsigned)RADIOLINK_WIRE_V3_MAX_PLAINTEXT_LEN);
-        len = RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN;
+        len = RADIOLINK_WIRE_V3_MAX_PLAINTEXT_LEN;
     }
 
     payload_len = (uint8_t)len;
@@ -768,12 +726,11 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
         return false;
     }
 
-    if (len > RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN) {
-        printf("RL: TX buf too long: %u > %u (truncating; v3 max=%u)\r\n",
+    if (len > RADIOLINK_WIRE_V3_MAX_PLAINTEXT_LEN) {
+        printf("RL: TX buf too long: %u > %u (truncating)\r\n",
                (unsigned)len,
-               (unsigned)RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN,
                (unsigned)RADIOLINK_WIRE_V3_MAX_PLAINTEXT_LEN);
-        len = RADIOLINK_WIRE_V1_MAX_PAYLOAD_LEN;
+        len = (uint8_t)RADIOLINK_WIRE_V3_MAX_PLAINTEXT_LEN;
     }
 
     node_id = RadioLink_GetNodeId();
@@ -823,25 +780,10 @@ bool RadioLink_SendBytes(SX1262_Handle *sx, const uint8_t *buf, uint8_t len) {
     uint8_t frameLen = 0U;
     bool ok = false;
 
-    // === WIRE_VERSION_SELECT_TX (compile-time; no behavior change yet) ===
-    #if (RADIOLINK_CRYPTO_ENABLE == 0)
-        ok = RadioLink_BuildWireV2Frame(frame,
-                                       (uint8_t)sizeof(frame),
-                                       node_id,
-                                       g_radiolink_sessionSeqId,
-                                       counter,
-                                       buf,
-                                       len,
-                                       &frameLen);
-#else
-// Crypto-enabled build: TX must emit Wire v3 only (no downgrade).
-        ok = RadioLink_BuildWireV3Frame_Stub(frame, (uint8_t)sizeof(frame), node_id, g_radiolink_sessionSeqId, counter, buf, len, &frameLen);
-        if (!ok) {
-        	printf("RL: TX v3 build failed (crypto enabled) - not sending\r\n");
-        }
-#endif
-
-    // === END WIRE_VERSION_SELECT_TX ===
+    ok = RadioLink_BuildWireV3Frame_Stub(frame, (uint8_t)sizeof(frame), node_id, g_radiolink_sessionSeqId, counter, buf, len, &frameLen);
+    if (!ok) {
+    	printf("RL: TX v3 build failed (crypto enabled) - not sending\r\n");
+    }
 
     if (!ok) {
         status = false;

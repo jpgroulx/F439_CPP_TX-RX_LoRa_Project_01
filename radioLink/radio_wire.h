@@ -14,7 +14,7 @@
  *
  * NOTE:
  * - Intentionally may be unused for now (do not delete).
- * - These represent the planned v1+ header/payload model.
+- These represent the Wire v3 layout stub used for offsetof() derivation.
  */
 
 #ifndef RADIO_WIRE_H_
